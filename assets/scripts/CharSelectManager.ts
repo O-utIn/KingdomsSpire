@@ -135,7 +135,6 @@ export class CharSelectManager extends Component {
 
     onConfirmClick() {
         console.log(`[确认选择] 角色ID: ${GlobalData.instance.selectedCharId}, 难度: ${GlobalData.instance.difficulty}`);
-        // 将PartnerStage改为InitialReward
         director.loadScene("InitialReward"); 
     }
 }
