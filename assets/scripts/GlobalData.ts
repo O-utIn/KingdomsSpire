@@ -8,6 +8,8 @@ export interface CharacterPackage {
     desc: string;
 }
 
+
+// 全局字段一律采用instance写法而不是static写法
 export class GlobalData {
     private static _instance: GlobalData;
     public static get instance() {
@@ -16,6 +18,7 @@ export class GlobalData {
     }
 
     public selectedCharId: number = 0;
-    public static difficulty: number = 1; // 保持你之前的静态变量
+    public difficulty: number = 1; 
     public selectedChar: CharacterPackage | null = null; 
+    public initialRewardChoiceIndex: number = -1;
 }

@@ -1,13 +1,14 @@
 import { _decorator, Component, Node, Label, Sprite, director, resources, SpriteFrame, Toggle, tween, UIOpacity, game } from 'cc';
+import { GlobalData } from './GlobalData';
 const { ccclass, property } = _decorator;
 
-/**
- * 全局数据存储类（协作核心）
- */
+/*
+GlobalData.ts已经有全局数据类了
 export class GlobalData {
     public static selectedCharId: number = 0; 
     public static difficulty: number = 1;     
 }
+*/
 
 interface CharacterInfo {
     name: string;
@@ -59,7 +60,7 @@ export class CharSelectManager extends Component {
     start() {
         // 初始化默认显示
         this.currentDiffIdx = 0;
-        GlobalData.difficulty = this.difficultyLevels[this.currentDiffIdx];
+        GlobalData.instance.difficulty = this.difficultyLevels[this.currentDiffIdx];
         this.updateUI(0);
     }
 
@@ -70,7 +71,7 @@ export class CharSelectManager extends Component {
         if (!toggle.isChecked) return; 
 
         const id = parseInt(customData);
-        GlobalData.selectedCharId = id;
+        GlobalData.instance.selectedCharId = id;
         this.updateUI(id);
     }
 
@@ -81,7 +82,7 @@ export class CharSelectManager extends Component {
         this.charNameLabel.string = data.name;
         this.charDescLabel.string = data.desc;
         this.statsLabel.string = `❤️ ${data.hp}/${data.hp}   💰 ${data.gold}`;
-        this.levelLabel.string = GlobalData.difficulty.toString();
+        this.levelLabel.string = GlobalData.instance.difficulty.toString();
 
         if (this.bigArtOpacity) {
             tween(this.bigArtOpacity)
@@ -122,10 +123,10 @@ export class CharSelectManager extends Component {
         }
 
         this.currentDiffIdx = nextIdx;
-        GlobalData.difficulty = this.difficultyLevels[this.currentDiffIdx];
+        GlobalData.instance.difficulty = this.difficultyLevels[this.currentDiffIdx];
         
-        this.levelLabel.string = GlobalData.difficulty.toString();
-        console.log("循环切换难度值:", GlobalData.difficulty);
+        this.levelLabel.string = GlobalData.instance.difficulty.toString();
+        console.log("循环切换难度值:", GlobalData.instance.difficulty);
     }
 
     onBackClick() {
@@ -133,8 +134,8 @@ export class CharSelectManager extends Component {
     }
 
     onConfirmClick() {
-        console.log(`[确认选择] 角色ID: ${GlobalData.selectedCharId}, 难度: ${GlobalData.difficulty}`);
-        // 确保你的 assets/scenes 下有 PartnerStage 场景
-        director.loadScene("PartnerStage"); 
+        console.log(`[确认选择] 角色ID: ${GlobalData.instance.selectedCharId}, 难度: ${GlobalData.instance.difficulty}`);
+        // 将PartnerStage改为InitialReward
+        director.loadScene("InitialReward"); 
     }
 }

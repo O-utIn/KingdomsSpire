@@ -9,12 +9,12 @@ export interface CharData {
     desc: string;
     artPath: string; // 大立绘资源路径 (resources目录下)
 }
-
-// 全局静态数据，用于跨场景传递选择结果
+/*
 export class GlobalData {
     public static selectedCharId: number = 0;
     public static difficulty: number = 1; // 1-20级难度
 }
+*/
 
 // 模拟角色配置表
 export const CHAR_LIST: CharData[] = [
