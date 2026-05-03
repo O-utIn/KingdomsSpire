@@ -11,7 +11,9 @@ import {
     UITransform,
     Vec2,
 } from 'cc';
+import { SCENE_GAME_MAP } from './GameConfig';
 import { GlobalData, CharacterPackage } from './GlobalData';
+import { MapScreenManager } from './MapScreenManager';
 const { ccclass, property } = _decorator;
 
 type CharRow = Pick<CharacterPackage, 'id' | 'name' | 'hp' | 'maxHp' | 'gold' | 'desc'>;
@@ -213,7 +215,17 @@ export class InitialRewardManager extends Component {
     }
 
     private goNext(): void {
-        director.loadScene('PartnerStage');
+        director.loadScene(SCENE_GAME_MAP, (err) => {
+            if (err) {
+                console.error('[InitialRewardManager] 进入地图场景失败（请确认构建里已包含 GameMap）', err);
+                return;
+            }
+            const scene = director.getScene();
+            const canvas = scene?.getChildByName('Canvas');
+            if (canvas && !canvas.getComponent(MapScreenManager)) {
+                canvas.addComponent(MapScreenManager);
+            }
+        });
     }
 
     private onPick(index: number): void {
