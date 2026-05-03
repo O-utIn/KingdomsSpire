@@ -18,7 +18,14 @@ export class GlobalData {
     }
 
     public selectedCharId: number = 0;
-    public difficulty: number = 1; 
-    public selectedChar: CharacterPackage | null = null; 
+    public difficulty: number = 1;
+    public selectedChar: CharacterPackage | null = null;
     public initialRewardChoiceIndex: number = -1;
+
+    /** 当前站立的地图节点 id（与 MapScreenManager 内图数据一致） */
+    public mapCurrentNodeId: number = 0;
+    /** 从出生点到当前节点经过的节点 id 序列（含起点） */
+    public mapPathNodeIds: number[] = [0];
+    /** 地图总层数（最顶层 floor + 1），HUD 用 */
+    public mapFloorCount: number = 0;
 }
