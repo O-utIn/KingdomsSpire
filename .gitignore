@@ -22,3 +22,31 @@ node_modules/
 # WebStorm
 #//////////////////////////
 .idea/
+
+#//////////////////////////
+# Cursor / 本地 AI 工作区（勿提交）
+#//////////////////////////
+.cursor/
+
+#//////////////////////////
+# Cocos Creator 扩展（第三方 MCP 等，常含 node_modules，体积大）
+# 若将来要入库自研扩展，可改为仅忽略 extensions/**/node_modules/
+#//////////////////////////
+extensions/
+
+#//////////////////////////
+# 编辑器为 MCP / 工具管理生成的本地配置（随本机路径变化）
+#//////////////////////////
+settings/mcp-server.json
+settings/tool-manager.json
+
+#//////////////////////////
+# 操作系统与杂项
+#//////////////////////////
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.log
+*.tmp
+*.swp
+*~
