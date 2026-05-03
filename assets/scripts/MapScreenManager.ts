@@ -18,14 +18,15 @@ import {
     Widget,
     view,
 } from 'cc';
+import { SCENE_BATTLE } from './GameConfig';
 import { GlobalData } from './GlobalData';
 
 const { ccclass } = _decorator;
 
 const MAP_BG_LAYERS = [
-    'textures/spire-codex-ui-map-backgrounds/map_bottom_glory',
-    'textures/spire-codex-ui-map-backgrounds/map_middle_glory',
-    'textures/spire-codex-ui-map-backgrounds/map_top_glory',
+    'textures/spire-codex-ui-map-backgrounds/map_bottom_overgrowth',
+    'textures/spire-codex-ui-map-backgrounds/map_middle_overgrowth',
+    'textures/spire-codex-ui-map-backgrounds/map_top_overgrowth',
 ] as const;
 
 const MARKER_BY_CHAR = [
@@ -186,10 +187,9 @@ export class MapScreenManager extends Component {
         GlobalData.instance.mapCurrentNodeId = 0;
         GlobalData.instance.mapPathNodeIds = [0];
         GlobalData.instance.mapFloorCount = MAX_FLOOR + 1;
-        /** 先铺地图再叠 UI，避免 MapContent 盖住顶栏/底栏（参考图层次） */
+        /** 先铺地图再叠 UI，避免 MapContent 盖住顶栏（参考图层次） */
         await this.buildMapVisuals();
         this.buildTopHudBar();
-        this.buildBottomBar();
         await this.buildLegendWithIcons();
         this.syncCanvasCameraToScreen();
         this.redrawEdgeLines();
@@ -199,11 +199,16 @@ export class MapScreenManager extends Component {
     }
 
     onDestroy(): void {
-        this._contentRoot?.off(Node.EventType.MOUSE_WHEEL, this.onMapMouseWheel, this);
-        this._contentRoot?.off(Node.EventType.TOUCH_START, this.onMapTouchStart, this);
-        this._contentRoot?.off(Node.EventType.TOUCH_MOVE, this.onMapTouchMove, this);
-        this._contentRoot?.off(Node.EventType.TOUCH_END, this.onMapTouchEnd, this);
-        this._contentRoot?.off(Node.EventType.TOUCH_CANCEL, this.onMapTouchEnd, this);
+        /** 切场景时子节点可能已先销毁，对已失效 Node 调用 off 会触发引擎内部 null（见 Node.off） */
+        const root = this._contentRoot;
+        if (!root?.isValid) {
+            return;
+        }
+        root.off(Node.EventType.MOUSE_WHEEL, this.onMapMouseWheel, this);
+        root.off(Node.EventType.TOUCH_START, this.onMapTouchStart, this);
+        root.off(Node.EventType.TOUCH_MOVE, this.onMapTouchMove, this);
+        root.off(Node.EventType.TOUCH_END, this.onMapTouchEnd, this);
+        root.off(Node.EventType.TOUCH_CANCEL, this.onMapTouchEnd, this);
     }
 
     private syncCanvasCameraToScreen(): void {
@@ -279,85 +284,6 @@ export class MapScreenManager extends Component {
         this._hudLeft = mk('HudLeft', 0, 0);
         this._hudMid = mk('HudMid', 0.5, 1);
         this._hudRight = mk('HudRight', 1, 2);
-    }
-
-    private buildBottomBar(): void {
-        const vs = view.getVisibleSize();
-        const foot = new Node('MapFooter');
-        this.node.addChild(foot);
-        const fut = foot.addComponent(UITransform);
-        fut.setContentSize(vs.width, 64);
-        fut.anchorPoint.set(0.5, 0);
-        const fw = foot.addComponent(Widget);
-        fw.isAlignBottom = true;
-        fw.isAlignLeft = true;
-        fw.isAlignRight = true;
-        fw.bottom = 0;
-        fw.left = fw.right = 0;
-        fw.updateAlignment();
-
-        const fg = foot.addComponent(Graphics);
-        fg.fillColor = new Color(18, 22, 32, 185);
-        fg.rect(-vs.width * 0.5, 0, vs.width, 64);
-        fg.fill();
-
-        const back = new Node('BtnBack');
-        foot.addChild(back);
-        const bUt = back.addComponent(UITransform);
-        bUt.setContentSize(140, 44);
-        back.setPosition(-vs.width * 0.5 + 100, 32, 0);
-        const bLb = back.addComponent(Label);
-        bLb.string = '← 返回';
-        bLb.fontSize = 22;
-        bLb.color = new Color(255, 120, 110, 255);
-        bLb.enableOutline = true;
-        bLb.outlineColor = new Color(0, 0, 0, 180);
-        bLb.outlineWidth = 2;
-        back.on(Node.EventType.TOUCH_END, () => {
-            director.loadScene('MainMenu', (err) => {
-                if (err) {
-                    console.error('[MapScreenManager] 返回主菜单失败', err);
-                }
-            });
-        });
-
-        const hist = new Node('BtnHistory');
-        foot.addChild(hist);
-        const hUt = hist.addComponent(UITransform);
-        hUt.setContentSize(200, 44);
-        hist.setPosition(vs.width * 0.5 - 120, 32, 0);
-        const hLb = hist.addComponent(Label);
-        hLb.string = '检查点历史';
-        hLb.fontSize = 20;
-        hLb.color = new Color(120, 210, 200, 255);
-        hLb.enableOutline = true;
-        hLb.outlineColor = new Color(0, 0, 0, 160);
-        hLb.outlineWidth = 2;
-        hist.on(Node.EventType.TOUCH_END, () => {
-            console.log('[MapScreenManager] 检查点历史（占位）');
-        });
-
-        const proceed = new Node('BtnProceed');
-        foot.addChild(proceed);
-        const pUt = proceed.addComponent(UITransform);
-        pUt.setContentSize(160, 44);
-        proceed.setPosition(0, 32, 0);
-        const pLb = proceed.addComponent(Label);
-        pLb.string = '前进';
-        pLb.fontSize = 22;
-        pLb.color = new Color(200, 210, 230, 255);
-        pLb.enableOutline = true;
-        pLb.outlineColor = new Color(0, 0, 0, 160);
-        pLb.outlineWidth = 2;
-        proceed.on(Node.EventType.TOUCH_END, () => {
-            const cur = GlobalData.instance.mapCurrentNodeId;
-            const k = MAP_GRAPH[cur]?.kind;
-            if (k === 'boss') {
-                console.log('[MapScreenManager] 前进 → 战斗（待接）');
-            } else {
-                console.log('[MapScreenManager] 请先选择上方可行走节点');
-            }
-        });
     }
 
     /** 右侧图例：小图标 + 中文，参考图图例区 */
@@ -492,7 +418,7 @@ export class MapScreenManager extends Component {
     private async buildMapVisuals(): Promise<void> {
         const vs = view.getVisibleSize();
         const padTop = 82;
-        const padBottom = 72;
+        const padBottom = 16;
         const innerH = Math.max(400, vs.height - padTop - padBottom);
         const root = new Node('MapContent');
         this.node.addChild(root);
@@ -718,8 +644,13 @@ export class MapScreenManager extends Component {
         this.refreshHud();
         this.refreshPingAndInteract();
         const next = MAP_GRAPH[nodeId];
-        if (next?.kind === 'boss') {
-            console.log('[MapScreenManager] 到达 Boss 节点（战斗场景待接）');
+        const combatKinds: MapNodeKind[] = ['monster', 'elite', 'boss'];
+        if (next && combatKinds.includes(next.kind)) {
+            director.loadScene(SCENE_BATTLE, (err) => {
+                if (err) {
+                    console.error('[MapScreenManager] 进入战斗场景失败（请确认构建已包含 Battle）', err);
+                }
+            });
         }
     }
 

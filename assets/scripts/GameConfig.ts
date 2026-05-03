@@ -3,6 +3,9 @@ import { _decorator, SpriteFrame } from 'cc';
 /** 与 `assets/scenes/GameMap.scene` 资源名一致（不含扩展名） */
 export const SCENE_GAME_MAP = 'GameMap';
 
+/** 与 `assets/scenes/Battle.scene` 资源名一致（不含扩展名） */
+export const SCENE_BATTLE = 'Battle';
+
 // 角色数据接口
 export interface CharData {
     id: number;
