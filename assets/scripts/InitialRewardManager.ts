@@ -18,9 +18,9 @@ const { ccclass, property } = _decorator;
 
 type CharRow = Pick<CharacterPackage, 'id' | 'name' | 'hp' | 'maxHp' | 'gold' | 'desc'>;
 const CHAR_TABLE: CharRow[] = [
-    { id: 0, name: '...', hp: 70, maxHp: 70, gold: 99, desc: '...' },
-    { id: 1, name: '...', hp: 75, maxHp: 75, gold: 99, desc: '...' },
-    { id: 2, name: '...', hp: 80, maxHp: 80, gold: 99, desc: '...' },
+    { id: 0, name: '静默猎手', hp: 70, maxHp: 70, gold: 99, desc: '来自雾地的致命女猎手，擅长毒素与爆发。' },
+    { id: 1, name: '故障机器人', hp: 75, maxHp: 75, gold: 99, desc: '产生了自我意识，操控能量球进行战斗。' },
+    { id: 2, name: '铁甲卫士', hp: 80, maxHp: 80, gold: 99, desc: '出卖灵魂，挥舞恶魔之剑的战士。' },
 ];
 
 const START_RELICS: string[][] = [['relic_a'], ['relic_b'], ['relic_c']];
@@ -235,6 +235,7 @@ export class InitialRewardManager extends Component {
         const row = CHAR_TABLE[charId] ?? CHAR_TABLE[0];
         const relics = START_RELICS[index] ?? [];
 
+        GlobalData.instance.resetMapProgress();
         GlobalData.instance.selectedChar = {
             id: row.id,
             name: row.name,

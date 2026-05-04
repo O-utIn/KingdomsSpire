@@ -184,8 +184,10 @@ export class MapScreenManager extends Component {
 
     async start() {
         this.syncCanvasCameraToScreen();
-        GlobalData.instance.mapCurrentNodeId = 0;
-        GlobalData.instance.mapPathNodeIds = [0];
+        if (GlobalData.instance.mapFloorCount <= 0) {
+            GlobalData.instance.mapCurrentNodeId = 0;
+            GlobalData.instance.mapPathNodeIds = [0];
+        }
         GlobalData.instance.mapFloorCount = MAX_FLOOR + 1;
         /** 先铺地图再叠 UI，避免 MapContent 盖住顶栏（参考图层次） */
         await this.buildMapVisuals();
@@ -646,6 +648,7 @@ export class MapScreenManager extends Component {
         const next = MAP_GRAPH[nodeId];
         const combatKinds: MapNodeKind[] = ['monster', 'elite', 'boss'];
         if (next && combatKinds.includes(next.kind)) {
+            GlobalData.instance.prepareEncounter(next.kind as 'monster' | 'elite' | 'boss', nodeId);
             director.loadScene(SCENE_BATTLE, (err) => {
                 if (err) {
                     console.error('[MapScreenManager] 进入战斗场景失败（请确认构建已包含 Battle）', err);

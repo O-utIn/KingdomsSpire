@@ -1,5 +1,6 @@
 import type { EnemyId } from './EnemyDef';
 import { getEnemyDef } from './EnemyDef';
+import type { EnemyIntentDef } from './EnemyDef';
 
 let _nextUid = 1;
 
@@ -14,6 +15,8 @@ export class EnemyInstance {
     block = 0;
     /** 当前回合展示的意图文案（由 pickIntentAt / setIntent 维护） */
     currentIntentLabel = '';
+    /** 力量会追加到攻击意图的伤害上 */
+    strength = 0;
     /** 意图池轮转用 */
     private _intentIndex = 0;
 
@@ -35,6 +38,11 @@ export class EnemyInstance {
         return this.currentHp <= 0;
     }
 
+    get currentIntent(): EnemyIntentDef | null {
+        const def = getEnemyDef(this.defId);
+        return def?.intents[this._intentIndex] ?? null;
+    }
+
     /** 从配置池按索引取意图（循环） */
     pickIntentAt(index: number): void {
         const def = getEnemyDef(this.defId);
@@ -43,7 +51,7 @@ export class EnemyInstance {
             return;
         }
         this._intentIndex = ((index % def.intents.length) + def.intents.length) % def.intents.length;
-        this.currentIntentLabel = def.intents[this._intentIndex]!;
+        this.currentIntentLabel = def.intents[this._intentIndex]!.label;
     }
 
     /** 下一格意图（常用于回合结束） */

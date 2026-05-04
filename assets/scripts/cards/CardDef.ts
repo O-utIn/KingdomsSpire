@@ -7,6 +7,10 @@ export interface CardDef {
     cost: number;
     /** 简短说明，UI 用 */
     description: string;
+    /** 对选中敌人造成的伤害 */
+    damage?: number;
+    /** 给玩家获得的格挡 */
+    block?: number;
     /** 打出后进入消耗堆而非弃牌堆 */
     exhaustsOnPlay?: boolean;
 }
@@ -16,25 +20,29 @@ const DEFS: Record<CardId, CardDef> = {
         id: 'strike',
         name: '打击',
         cost: 1,
-        description: '造成 6 点伤害。（数值占位）',
+        description: '造成 6 点伤害。',
+        damage: 6,
     },
     defend: {
         id: 'defend',
         name: '防御',
         cost: 1,
-        description: '获得 5 点格挡。（数值占位）',
+        description: '获得 5 点格挡。',
+        block: 5,
     },
     bash: {
         id: 'bash',
         name: '重击',
         cost: 2,
-        description: '造成 8 点伤害，施加易伤。（占位）',
+        description: '造成 8 点伤害。',
+        damage: 8,
     },
     survivor: {
         id: 'survivor',
         name: '生存者',
         cost: 1,
-        description: '消耗：获得 8 点格挡。（占位）',
+        description: '消耗：获得 8 点格挡。',
+        block: 8,
         exhaustsOnPlay: true,
     },
 };
