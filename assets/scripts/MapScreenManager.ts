@@ -20,6 +20,7 @@ import {
 } from 'cc';
 import { SCENE_BATTLE } from './GameConfig';
 import { GlobalData } from './GlobalData';
+import { RunHudManager } from './RunHudManager';
 
 const { ccclass } = _decorator;
 
@@ -178,9 +179,6 @@ export class MapScreenManager extends Component {
     private _lineGraphics: Graphics | null = null;
     private _pathGraphics: Graphics | null = null;
     private _pingRoot: Node | null = null;
-    private _hudLeft: Label | null = null;
-    private _hudMid: Label | null = null;
-    private _hudRight: Label | null = null;
 
     async start() {
         this.syncCanvasCameraToScreen();
@@ -189,14 +187,14 @@ export class MapScreenManager extends Component {
             GlobalData.instance.mapPathNodeIds = [0];
         }
         GlobalData.instance.mapFloorCount = MAX_FLOOR + 1;
+        RunHudManager.startRun();
+        this.refreshRunHud();
         /** 先铺地图再叠 UI，避免 MapContent 盖住顶栏（参考图层次） */
         await this.buildMapVisuals();
-        this.buildTopHudBar();
         await this.buildLegendWithIcons();
         this.syncCanvasCameraToScreen();
         this.redrawEdgeLines();
         this.redrawPathLine();
-        this.refreshHud();
         this.refreshPingAndInteract();
     }
 
@@ -222,70 +220,6 @@ export class MapScreenManager extends Component {
             cam.near = 0;
             cam.far = 2000;
         }
-    }
-
-    /** 深色顶栏 + 左/中/右信息，贴近参考图 HUD 分区 */
-    private buildTopHudBar(): void {
-        const vs = view.getVisibleSize();
-        const canvasUt = this.node.getComponent(UITransform);
-        if (canvasUt) {
-            canvasUt.setContentSize(vs.width, vs.height);
-        }
-        const w = this.node.getComponent(Widget);
-        if (w) {
-            w.isAlignTop = w.isAlignBottom = w.isAlignLeft = w.isAlignRight = true;
-            w.top = w.bottom = w.left = w.right = 0;
-            w.updateAlignment();
-        }
-
-        const bar = new Node('MapTopBar');
-        this.node.addChild(bar);
-        const barUt = bar.addComponent(UITransform);
-        barUt.setContentSize(vs.width, 76);
-        barUt.anchorPoint.set(0.5, 1);
-        const barW = bar.addComponent(Widget);
-        barW.isAlignTop = true;
-        barW.isAlignLeft = true;
-        barW.isAlignRight = true;
-        barW.top = 0;
-        barW.left = barW.right = 0;
-        barW.updateAlignment();
-        const g = bar.addComponent(Graphics);
-        g.fillColor = new Color(18, 22, 32, 210);
-        const hw = vs.width * 0.5;
-        g.rect(-hw, -76, vs.width, 76);
-        g.fill();
-
-        const row = new Node('HudRow');
-        bar.addChild(row);
-        const rowUt = row.addComponent(UITransform);
-        rowUt.setContentSize(vs.width - 32, 56);
-        rowUt.anchorPoint.set(0.5, 0.5);
-        row.setPosition(0, -38, 0);
-
-        const mk = (name: string, ax: number, hAlign: number): Label => {
-            const n = new Node(name);
-            row.addChild(n);
-            const ut = n.addComponent(UITransform);
-            ut.setContentSize(420, 52);
-            ut.anchorPoint.set(ax, 0.5);
-            const xOff = (ax - 0.5) * (vs.width - 48);
-            n.setPosition(xOff, 0, 0);
-            const lb = n.addComponent(Label);
-            lb.fontSize = 20;
-            lb.lineHeight = 24;
-            lb.horizontalAlign = hAlign;
-            lb.verticalAlign = 1;
-            lb.color = new Color(230, 235, 245, 255);
-            lb.enableOutline = true;
-            lb.outlineColor = new Color(0, 0, 0, 200);
-            lb.outlineWidth = 2;
-            return lb;
-        };
-
-        this._hudLeft = mk('HudLeft', 0, 0);
-        this._hudMid = mk('HudMid', 0.5, 1);
-        this._hudRight = mk('HudRight', 1, 2);
     }
 
     /** 右侧图例：小图标 + 中文，参考图图例区 */
@@ -643,7 +577,7 @@ export class MapScreenManager extends Component {
         GlobalData.instance.mapCurrentNodeId = nodeId;
         GlobalData.instance.mapPathNodeIds.push(nodeId);
         this.redrawPathLine();
-        this.refreshHud();
+        this.refreshRunHud();
         this.refreshPingAndInteract();
         const next = MAP_GRAPH[nodeId];
         const combatKinds: MapNodeKind[] = ['monster', 'elite', 'boss'];
@@ -694,26 +628,10 @@ export class MapScreenManager extends Component {
         }
     }
 
-    private refreshHud(): void {
-        const ch = GlobalData.instance.selectedChar;
+    private refreshRunHud(): void {
         const cur = GlobalData.instance.mapCurrentNodeId;
         const floor = MAP_GRAPH[cur]?.floor ?? 0;
         const maxF = GlobalData.instance.mapFloorCount || MAX_FLOOR + 1;
-
-        if (this._hudLeft) {
-            if (ch) {
-                this._hudLeft.string = `❤ ${ch.hp}/${ch.maxHp}     💰 ${ch.gold}`;
-            } else {
-                this._hudLeft.string = '—  未携带角色数据';
-            }
-        }
-        if (this._hudMid) {
-            this._hudMid.string = `地图  楼层 ${floor + 1}  /  ${maxF}   ·  滚轮 / 双指缩放`;
-        }
-        if (this._hudRight) {
-            const t = new Date();
-            const pad = (x: number) => (x < 10 ? `0${x}` : `${x}`);
-            this._hudRight.string = `🕐 ${pad(t.getHours())}:${pad(t.getMinutes())}     牌组 17`;
-        }
+        RunHudManager.setCenterText(`地图  楼层 ${floor + 1} / ${maxF}  ·  滚轮 / 双指缩放`);
     }
 }

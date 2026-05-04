@@ -14,6 +14,7 @@ import {
 import { SCENE_GAME_MAP } from './GameConfig';
 import { GlobalData, CharacterPackage } from './GlobalData';
 import { MapScreenManager } from './MapScreenManager';
+import { RunHudManager } from './RunHudManager';
 const { ccclass, property } = _decorator;
 
 type CharRow = Pick<CharacterPackage, 'id' | 'name' | 'hp' | 'maxHp' | 'gold' | 'desc'>;
@@ -45,8 +46,27 @@ export class InitialRewardManager extends Component {
     private _setupDone = false;
 
     onLoad() {
+        this.prepareRunState();
         // 晚一帧再写 UI，避免与 Layout 同一帧抢顺序；运行后才会执行（编辑器静态场景里不会跑）
         this.scheduleOnce(() => this.setupRewardRows(), 0);
+    }
+
+    private prepareRunState(): void {
+        const gd = GlobalData.instance;
+        gd.resetMapProgress();
+
+        const row = CHAR_TABLE[gd.selectedCharId] ?? CHAR_TABLE[0];
+        gd.selectedChar = {
+            id: row.id,
+            name: row.name,
+            hp: row.hp,
+            maxHp: row.maxHp,
+            gold: row.gold,
+            relics: [],
+            desc: row.desc,
+        };
+
+        RunHudManager.setCenterText('选择初始遗物');
     }
 
     /** 优先用 Inspector 里拖好的 `myButtons`；为空则从 ChoiceList/Layout 下自动收集 */
@@ -229,14 +249,14 @@ export class InitialRewardManager extends Component {
     }
 
     private onPick(index: number): void {
-        GlobalData.instance.initialRewardChoiceIndex = index;
+        const gd = GlobalData.instance;
+        gd.initialRewardChoiceIndex = index;
 
-        const charId = GlobalData.instance.selectedCharId;
+        const charId = gd.selectedCharId;
         const row = CHAR_TABLE[charId] ?? CHAR_TABLE[0];
         const relics = START_RELICS[index] ?? [];
 
-        GlobalData.instance.resetMapProgress();
-        GlobalData.instance.selectedChar = {
+        gd.selectedChar = {
             id: row.id,
             name: row.name,
             hp: row.hp,
@@ -245,6 +265,7 @@ export class InitialRewardManager extends Component {
             relics: [...relics],
             desc: row.desc,
         };
+        RunHudManager.setCenterText('选择初始遗物');
         console.log('选了第几个:', index);
         this.goNext();
     }

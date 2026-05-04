@@ -22,6 +22,8 @@ export class GlobalData {
     public difficulty: number = 1;
     public selectedChar: CharacterPackage | null = null;
     public initialRewardChoiceIndex: number = -1;
+    public deckCount: number = 17;
+    public runHudCenterText: string = '';
 
     /** 地图进入战斗前写入，战斗场景用它决定怪物组和奖励 */
     public pendingEncounterKind: CombatEncounterKind = '';
@@ -40,6 +42,8 @@ export class GlobalData {
         this.mapFloorCount = 0;
         this.pendingEncounterKind = '';
         this.pendingEncounterNodeId = -1;
+        this.deckCount = 17;
+        this.runHudCenterText = '';
     }
 
     public prepareEncounter(kind: CombatEncounterKind, nodeId: number): void {
@@ -50,5 +54,9 @@ export class GlobalData {
     public clearPendingEncounter(): void {
         this.pendingEncounterKind = '';
         this.pendingEncounterNodeId = -1;
+    }
+
+    public setRunHudCenterText(text: string): void {
+        this.runHudCenterText = text;
     }
 }

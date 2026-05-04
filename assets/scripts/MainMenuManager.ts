@@ -1,8 +1,12 @@
 import { _decorator, Component, director, game } from 'cc';
+import { RunHudManager } from './RunHudManager';
 const { ccclass } = _decorator;
 
 @ccclass('MainMenuManager')
 export class MainMenuManager extends Component {
+    onLoad(): void {
+        RunHudManager.stopRun();
+    }
 
     /**
      * 跳转选角页面

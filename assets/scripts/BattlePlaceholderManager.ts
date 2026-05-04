@@ -18,6 +18,7 @@ import {
 import { SCENE_GAME_MAP } from './GameConfig';
 import { GlobalData } from './GlobalData';
 import type { CharacterPackage, CombatEncounterKind } from './GlobalData';
+import { RunHudManager } from './RunHudManager';
 import type { CardDef, CardId } from './cards/CardDef';
 import { getCardDef } from './cards/CardDef';
 import type { CardInstance } from './cards/CardInstance';
@@ -121,11 +122,9 @@ export class BattlePlaceholderManager extends Component {
     private _settlementShown = false;
     private _encounterKind: CombatEncounterKind = 'monster';
 
-    private _topStatusLabel: Label | null = null;
     private _playerHpLabel: Label | null = null;
     private _playerBlockLabel: Label | null = null;
     private _energyLabel: Label | null = null;
-    private _pileLabel: Label | null = null;
     private _logLabel: Label | null = null;
     private _handRoot: Node | null = null;
     private _enemyViews: EnemyView[] = [];
@@ -133,6 +132,7 @@ export class BattlePlaceholderManager extends Component {
     async start(): Promise<void> {
         this.syncCanvasCameraToScreen();
         this.setupCombatData();
+        RunHudManager.startRun();
         await this.buildSceneGraph();
         this.startPlayerTurn(true);
     }
@@ -211,7 +211,6 @@ export class BattlePlaceholderManager extends Component {
 
         const vs = view.getVisibleSize();
         await this.buildBackground(vs.width, vs.height);
-        this.buildTopHud(vs.width, vs.height);
         await this.buildPlayerPanel(vs.width, vs.height);
         this.buildEnemyPanels(vs.width, vs.height);
         this.buildLogPanel(vs.width, vs.height);
@@ -246,12 +245,6 @@ export class BattlePlaceholderManager extends Component {
         g.fillColor = new Color(8, 10, 14, 122);
         g.rect(-w * 0.5, -h * 0.5, w, h);
         g.fill();
-    }
-
-    private buildTopHud(w: number, h: number): void {
-        const bar = this.makePanel('TopHud', w, 78, 0, h * 0.5 - 39, new Color(16, 19, 27, 230));
-        this._topStatusLabel = this.addLabel(bar, 'Status', w - 40, 34, 0, 16, 24, new Color(236, 240, 248, 255));
-        this._pileLabel = this.addLabel(bar, 'Piles', w - 40, 26, 0, -17, 18, new Color(190, 202, 218, 255));
     }
 
     private async buildPlayerPanel(w: number, h: number): Promise<void> {
@@ -616,30 +609,25 @@ export class BattlePlaceholderManager extends Component {
     }
 
     private refreshAll(): void {
-        this.refreshTopHud();
+        this.refreshRunHud();
         this.refreshPlayerPanel();
         this.refreshEnemyViews();
         this.renderHand();
         this.refreshLog();
     }
 
-    private refreshTopHud(): void {
+    private refreshRunHud(): void {
         const nodeId = GlobalData.instance.pendingEncounterNodeId >= 0
             ? GlobalData.instance.pendingEncounterNodeId
             : GlobalData.instance.mapCurrentNodeId;
-        if (this._topStatusLabel) {
-            const stateText = this._state === 'player'
-                ? '玩家回合'
-                : this._state === 'enemy'
-                    ? '敌方回合'
-                    : this._state === 'victory'
-                        ? '胜利结算'
-                        : '失败结算';
-            this._topStatusLabel.string = `${encounterTitle(this._encounterKind)}  |  地图节点 #${nodeId}  |  第 ${this._turn} 回合  |  ${stateText}`;
-        }
-        if (this._pileLabel) {
-            this._pileLabel.string = `抽牌堆 ${this._flow.drawPile.length}    手牌 ${this._flow.hand.length}    弃牌堆 ${this._flow.discardPile.length}    消耗堆 ${this._flow.exhaustPile.length}`;
-        }
+        const stateText = this._state === 'player'
+            ? '玩家回合'
+            : this._state === 'enemy'
+                ? '敌方回合'
+                : this._state === 'victory'
+                    ? '胜利结算'
+                    : '失败结算';
+        RunHudManager.setCenterText(`${encounterTitle(this._encounterKind)}  |  地图节点 #${nodeId}  |  第 ${this._turn} 回合  |  ${stateText}`);
     }
 
     private refreshPlayerPanel(): void {
