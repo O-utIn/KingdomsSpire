@@ -7,13 +7,17 @@ import {
     Label,
     Layout,
     Node,
+    resources,
     Sprite,
+    SpriteFrame,
     UITransform,
     Vec2,
 } from 'cc';
 import { SCENE_GAME_MAP } from './GameConfig';
 import { GlobalData, CharacterPackage } from './GlobalData';
 import { MapScreenManager } from './MapScreenManager';
+import { getRelicDef, getStarterRelicsForCharacter, NEOW_STARTER_RELIC_IDS } from './relics/RelicDef';
+import type { RelicDef, RelicId } from './relics/RelicDef';
 import { RunHudManager } from './RunHudManager';
 const { ccclass, property } = _decorator;
 
@@ -24,17 +28,16 @@ const CHAR_TABLE: CharRow[] = [
     { id: 2, name: '铁甲卫士', hp: 80, maxHp: 80, gold: 99, desc: '出卖灵魂，挥舞恶魔之剑的战士。' },
 ];
 
-const START_RELICS: string[][] = [['relic_a'], ['relic_b'], ['relic_c']];
-
-/** 与 START_RELICS 一一对应，用于 Neow 式三选一展示 */
-const OPTION_UI: { title: string; desc: string }[] = [
-    { title: '能量核心', desc: '战斗开始时获得 1 点能量。' },
-    { title: '灵体羽翼', desc: '每场战斗首次受到伤害时免疫。' },
-    { title: '黄金玫瑰', desc: '拾取金币时额外回复 3 点生命。' },
-];
-
 const ROW_BG_NORMAL = new Color(34, 40, 52, 255);
 const ROW_BG_HOVER = new Color(52, 88, 108, 255);
+
+function appendRelic(base: readonly RelicId[], picked: RelicId | undefined): RelicId[] {
+    const out = [...base];
+    if (picked && out.indexOf(picked) < 0) {
+        out.push(picked);
+    }
+    return out;
+}
 
 @ccclass('InitialRewardManager')
 export class InitialRewardManager extends Component {
@@ -62,7 +65,7 @@ export class InitialRewardManager extends Component {
             hp: row.hp,
             maxHp: row.maxHp,
             gold: row.gold,
-            relics: [],
+            relics: getStarterRelicsForCharacter(row.id),
             desc: row.desc,
         };
 
@@ -103,9 +106,10 @@ export class InitialRewardManager extends Component {
         this._setupDone = true;
 
         buttons.forEach((btn, index) => {
-            const ui = OPTION_UI[index];
-            if (ui) {
-                this.applyOptionCopy(btn, ui);
+            const relicId = NEOW_STARTER_RELIC_IDS[index];
+            const relic = relicId ? getRelicDef(relicId) : null;
+            if (relic) {
+                this.applyOptionCopy(btn, relic);
             }
             this.styleRow(btn, index);
 
@@ -138,9 +142,11 @@ export class InitialRewardManager extends Component {
         ly?.updateLayout(true);
     }
 
-    private applyOptionCopy(btn: Button, ui: { title: string; desc: string }): void {
+    private applyOptionCopy(btn: Button, relic: RelicDef): void {
+        this.ensureRelicIcon(btn.node, relic);
+
         const titleLb = this.ensureTitleLabel(btn.node);
-        titleLb.string = ui.title;
+        titleLb.string = relic.name;
         titleLb.enableOutline = true;
         titleLb.outlineColor = new Color(20, 16, 8, 220);
         titleLb.outlineWidth = 2;
@@ -148,7 +154,7 @@ export class InitialRewardManager extends Component {
         const descNode = btn.node.getChildByName('Label');
         const descLb = descNode?.getComponent(Label);
         if (descLb) {
-            descLb.string = ui.desc;
+            descLb.string = relic.description;
             descLb.fontSize = 16;
             descLb.lineHeight = 22;
             descLb.overflow = Label.Overflow.NONE;
@@ -163,9 +169,33 @@ export class InitialRewardManager extends Component {
             if (dut) {
                 dut.setContentSize(500, 40);
                 dut.anchorPoint = new Vec2(0, 0.5);
-                descNode.setPosition(-248, -18, 0);
+                descNode.setPosition(-210, -18, 0);
             }
         }
+    }
+
+    private ensureRelicIcon(parent: Node, relic: RelicDef): void {
+        let n = parent.getChildByName('RelicIcon');
+        if (!n) {
+            n = new Node('RelicIcon');
+            parent.addChild(n);
+            const ut = n.addComponent(UITransform);
+            ut.setContentSize(56, 56);
+            n.setPosition(-286, 0, 0);
+            n.addComponent(Sprite).sizeMode = Sprite.SizeMode.CUSTOM;
+        }
+
+        const sp = n.getComponent(Sprite);
+        resources.load(`${relic.iconPath}/spriteFrame`, SpriteFrame, (err, sf) => {
+            if (err || !sp || !sp.node.isValid) {
+                if (err) {
+                    console.warn(`[InitialRewardManager] 加载遗物图标失败：${relic.iconPath}`, err);
+                }
+                return;
+            }
+            sp.spriteFrame = sf;
+            sp.color = Color.WHITE;
+        });
     }
 
     private ensureTitleLabel(parent: Node): Label {
@@ -187,9 +217,15 @@ export class InitialRewardManager extends Component {
             lb.enableOutline = true;
             lb.outlineColor = new Color(20, 16, 8, 220);
             lb.outlineWidth = 2;
-            n.setPosition(-248, 14, 0);
+            n.setPosition(-210, 14, 0);
             return lb;
         }
+        const ut = n.getComponent(UITransform);
+        if (ut) {
+            ut.setContentSize(500, 32);
+            ut.anchorPoint = new Vec2(0, 0.5);
+        }
+        n.setPosition(-210, 14, 0);
         return n.getComponent(Label)!;
     }
 
@@ -254,7 +290,8 @@ export class InitialRewardManager extends Component {
 
         const charId = gd.selectedCharId;
         const row = CHAR_TABLE[charId] ?? CHAR_TABLE[0];
-        const relics = START_RELICS[index] ?? [];
+        const starterRelics = getStarterRelicsForCharacter(row.id);
+        const chosenRelic = NEOW_STARTER_RELIC_IDS[index];
 
         gd.selectedChar = {
             id: row.id,
@@ -262,7 +299,7 @@ export class InitialRewardManager extends Component {
             hp: row.hp,
             maxHp: row.maxHp,
             gold: row.gold,
-            relics: [...relics],
+            relics: appendRelic(starterRelics, chosenRelic),
             desc: row.desc,
         };
         RunHudManager.setCenterText('选择初始遗物');

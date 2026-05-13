@@ -1,10 +1,12 @@
+import type { RelicId } from './relics/RelicDef';
+
 export interface CharacterPackage {
     id: number;
     name: string;
     hp: number;
     maxHp: number;
     gold: number;
-    relics: string[];
+    relics: RelicId[];
     desc: string;
 }
 

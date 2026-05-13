@@ -18,6 +18,8 @@ import {
 import { SCENE_GAME_MAP } from './GameConfig';
 import { GlobalData } from './GlobalData';
 import type { CharacterPackage, CombatEncounterKind } from './GlobalData';
+import { getRelicDefs, getStarterRelicsForCharacter } from './relics/RelicDef';
+import type { RelicDef } from './relics/RelicDef';
 import { RunHudManager } from './RunHudManager';
 import type { CardDef, CardId } from './cards/CardDef';
 import { getCardDef } from './cards/CardDef';
@@ -55,7 +57,7 @@ const PLAYER_ART_BY_CHAR = [
 const FALLBACK_CHARACTERS: CharacterPackage[] = [
     { id: 0, name: '静默猎手', hp: 70, maxHp: 70, gold: 99, relics: [], desc: '来自雾地的致命女猎手。' },
     { id: 1, name: '故障机器人', hp: 75, maxHp: 75, gold: 99, relics: [], desc: '产生了自我意识的自动机械。' },
-    { id: 2, name: '铁甲卫士', hp: 80, maxHp: 80, gold: 99, relics: [], desc: '挥舞恶魔之剑的战士。' },
+    { id: 2, name: '铁甲卫士', hp: 80, maxHp: 80, gold: 99, relics: getStarterRelicsForCharacter(2), desc: '挥舞恶魔之剑的战士。' },
 ];
 
 const STARTER_DECK_BY_CHAR: CardId[][] = [
@@ -121,6 +123,7 @@ export class BattlePlaceholderManager extends Component {
     private _rewardGold = 0;
     private _settlementShown = false;
     private _encounterKind: CombatEncounterKind = 'monster';
+    private _firstHpLossImmuneReady = false;
 
     private _playerHpLabel: Label | null = null;
     private _playerBlockLabel: Label | null = null;
@@ -171,7 +174,8 @@ export class BattlePlaceholderManager extends Component {
         const deckIds = STARTER_DECK_BY_CHAR[gd.selectedCharId] ?? STARTER_DECK_BY_CHAR[0];
         const deck = deckIds.map((id) => createCardInstance(id));
         this._flow.resetCombat(deck);
-        this._energy.perTurn = gd.selectedChar?.relics.includes('relic_a') ? 4 : 3;
+        this._energy.perTurn = 3;
+        this._firstHpLossImmuneReady = this.relicDefs().some((relic) => !!relic.effects.firstHpLossImmune);
         this._logLines.length = 0;
         this.pushLog(`进入${encounterTitle(this._encounterKind)}。`);
     }
@@ -248,14 +252,14 @@ export class BattlePlaceholderManager extends Component {
     }
 
     private async buildPlayerPanel(w: number, h: number): Promise<void> {
-        const root = this.makePanel('PlayerPanel', 310, 280, -w * 0.34, -20, new Color(31, 38, 50, 225), new Color(80, 105, 138, 255));
-        this.addLabel(root, 'PlayerTitle', 270, 34, 0, 104, 22, new Color(255, 218, 134, 255));
+        const root = this.makePanel('PlayerPanel', 310, 330, -w * 0.34, -20, new Color(31, 38, 50, 225), new Color(80, 105, 138, 255));
+        this.addLabel(root, 'PlayerTitle', 270, 34, 0, 132, 22, new Color(255, 218, 134, 255));
 
         const artNode = new Node('PlayerArt');
         root.addChild(artNode);
-        artNode.setPosition(0, 28, 0);
+        artNode.setPosition(0, 58, 0);
         const artUt = artNode.addComponent(UITransform);
-        artUt.setContentSize(136, 136);
+        artUt.setContentSize(124, 124);
         const artSf = await loadSpriteFrame(PLAYER_ART_BY_CHAR[GlobalData.instance.selectedCharId] ?? PLAYER_ART_BY_CHAR[0]);
         if (artSf) {
             const sp = artNode.addComponent(Sprite);
@@ -263,12 +267,57 @@ export class BattlePlaceholderManager extends Component {
             sp.sizeMode = Sprite.SizeMode.CUSTOM;
         } else {
             const g = artNode.addComponent(Graphics);
-            paintRoundRect(g, 136, 136, new Color(60, 86, 115, 255), new Color(130, 160, 195, 255));
+            paintRoundRect(g, 124, 124, new Color(60, 86, 115, 255), new Color(130, 160, 195, 255));
         }
 
-        this._playerHpLabel = this.addLabel(root, 'PlayerHp', 270, 28, 0, -64, 22, new Color(245, 232, 224, 255));
-        this._playerBlockLabel = this.addLabel(root, 'PlayerBlock', 270, 28, 0, -95, 20, new Color(190, 225, 255, 255));
-        this._energyLabel = this.addLabel(root, 'Energy', 270, 30, 0, -126, 22, new Color(150, 225, 255, 255));
+        this._playerHpLabel = this.addLabel(root, 'PlayerHp', 270, 28, 0, -24, 22, new Color(245, 232, 224, 255));
+        await this.buildRelicIcons(root);
+        this._playerBlockLabel = this.addLabel(root, 'PlayerBlock', 270, 28, 0, -112, 20, new Color(190, 225, 255, 255));
+        this._energyLabel = this.addLabel(root, 'Energy', 270, 30, 0, -143, 22, new Color(150, 225, 255, 255));
+    }
+
+    private async buildRelicIcons(parent: Node): Promise<void> {
+        const defs = this.relicDefs();
+        const root = new Node('RelicIcons');
+        parent.addChild(root);
+        root.setPosition(0, -70, 0);
+        const rootUt = root.addComponent(UITransform);
+        rootUt.setContentSize(270, 42);
+
+        if (defs.length === 0) {
+            this.addLabel(root, 'EmptyRelics', 240, 32, 0, 0, 16, new Color(192, 202, 216, 255)).string = '遗物：无';
+            return;
+        }
+
+        const iconSize = 34;
+        const gap = 10;
+        const visibleDefs = defs.slice(0, 6);
+        const totalW = visibleDefs.length * iconSize + (visibleDefs.length - 1) * gap;
+        const startX = -totalW * 0.5 + iconSize * 0.5;
+
+        for (let i = 0; i < visibleDefs.length; i++) {
+            const def = visibleDefs[i];
+            const slot = new Node(`Relic_${def.id}`);
+            root.addChild(slot);
+            slot.setPosition(startX + i * (iconSize + gap), 0, 0);
+            const ut = slot.addComponent(UITransform);
+            ut.setContentSize(iconSize + 6, iconSize + 6);
+            const bg = slot.addComponent(Graphics);
+            paintRoundRect(bg, iconSize + 6, iconSize + 6, new Color(18, 22, 30, 225), new Color(176, 148, 86, 255), 2);
+
+            const icon = new Node('Icon');
+            slot.addChild(icon);
+            const iconUt = icon.addComponent(UITransform);
+            iconUt.setContentSize(iconSize, iconSize);
+            const sf = await loadSpriteFrame(def.iconPath);
+            if (sf) {
+                const sp = icon.addComponent(Sprite);
+                sp.spriteFrame = sf;
+                sp.sizeMode = Sprite.SizeMode.CUSTOM;
+            } else {
+                this.addLabel(icon, 'Fallback', iconSize, iconSize, 0, 0, 16, new Color(255, 218, 120, 255)).string = def.name.slice(0, 1);
+            }
+        }
     }
 
     private buildEnemyPanels(w: number, _h: number): void {
@@ -380,6 +429,13 @@ export class BattlePlaceholderManager extends Component {
         this._energy.startTurn();
         this._flow.draw(5);
         this.pushLog(isFirstTurn ? '你的回合开始，抽 5 张牌。' : `第 ${this._turn} 回合开始，抽 5 张牌。`);
+        if (isFirstTurn) {
+            const energyBonus = this.startCombatEnergyBonus();
+            if (energyBonus > 0) {
+                this._energy.add(energyBonus);
+                this.pushLog(`能量核心生效，额外获得 ${energyBonus} 点能量。`);
+            }
+        }
         this.refreshAll();
     }
 
@@ -501,6 +557,11 @@ export class BattlePlaceholderManager extends Component {
             this._playerBlock -= absorbed;
             remaining -= absorbed;
         }
+        if (remaining > 0 && this._firstHpLossImmuneReady) {
+            this._firstHpLossImmuneReady = false;
+            this.pushLog('灵体羽翼生效，免疫了本次生命伤害。');
+            return 0;
+        }
         const hpLoss = Math.min(ch.hp, remaining);
         ch.hp -= hpLoss;
         return hpLoss;
@@ -514,8 +575,17 @@ export class BattlePlaceholderManager extends Component {
         this._flow.discardAllHand();
         const kind = this._encounterKind || 'monster';
         this._rewardGold = REWARD_GOLD[kind as Exclude<CombatEncounterKind, ''>] ?? REWARD_GOLD.monster;
-        this.ensureSelectedCharacter().gold += this._rewardGold;
+        const ch = this.ensureSelectedCharacter();
+        ch.gold += this._rewardGold;
         this.pushLog(`战斗胜利，获得 ${this._rewardGold} 金币。`);
+        const goldRewardHeal = this.goldRewardHealAmount();
+        if (goldRewardHeal > 0) {
+            this.healPlayer(goldRewardHeal, '黄金玫瑰');
+        }
+        const victoryHeal = this.victoryHealAmount();
+        if (victoryHeal > 0) {
+            this.healPlayer(victoryHeal, '燃烧之血');
+        }
         this.refreshAll();
         this.showSettlement('victory');
     }
@@ -559,7 +629,7 @@ export class BattlePlaceholderManager extends Component {
         const desc = this.addLabel(panel, 'Desc', 500, 90, 0, 22, 22, new Color(230, 236, 246, 255));
         desc.lineHeight = 30;
         desc.string = result === 'victory'
-            ? `结算奖励：${this._rewardGold} 金币\n当前金币：${this.ensureSelectedCharacter().gold}`
+            ? `结算奖励：${this._rewardGold} 金币\n当前金币：${this.ensureSelectedCharacter().gold}\n当前生命：${this.ensureSelectedCharacter().hp}/${this.ensureSelectedCharacter().maxHp}`
             : '本轮 MVP 暂不进入死亡结算，可返回地图继续调试流程。';
 
         const btn = new Node('BackToMap');
@@ -606,6 +676,31 @@ export class BattlePlaceholderManager extends Component {
         if (this._logLines.length > 6) {
             this._logLines.length = 6;
         }
+    }
+
+    private relicDefs(): RelicDef[] {
+        return getRelicDefs(this.ensureSelectedCharacter().relics);
+    }
+
+    private startCombatEnergyBonus(): number {
+        return this.relicDefs().reduce((sum, relic) => sum + (relic.effects.startCombatEnergy ?? 0), 0);
+    }
+
+    private goldRewardHealAmount(): number {
+        return this.relicDefs().reduce((sum, relic) => sum + (relic.effects.goldRewardHeal ?? 0), 0);
+    }
+
+    private victoryHealAmount(): number {
+        return this.relicDefs().reduce((sum, relic) => sum + (relic.effects.victoryHeal ?? 0), 0);
+    }
+
+    private healPlayer(amount: number, source: string): number {
+        const ch = this.ensureSelectedCharacter();
+        const before = ch.hp;
+        ch.hp = Math.min(ch.maxHp, ch.hp + Math.max(0, amount));
+        const healed = ch.hp - before;
+        this.pushLog(healed > 0 ? `${source}生效，回复 ${healed} 点生命。` : `${source}生效，但生命已满。`);
+        return healed;
     }
 
     private refreshAll(): void {
