@@ -37,19 +37,19 @@ export class CharSelectManager extends Component {
             name: "静默猎手", 
             hp: 70, gold: 99, 
             desc: "来自雾地的致命女猎手，擅长毒素与爆发。", 
-            artPath: "textures/chars/images" 
+            artPath: "textures/chars/images_background" 
         },
         { 
             name: "故障机器人", 
             hp: 75, gold: 99, 
             desc: "产生了自我意识，操控能量球进行战斗。", 
-            artPath: "textures/chars/moj"    
+            artPath: "textures/chars/moj_background"    
         },
         { 
             name: "铁甲卫士", 
             hp: 80, gold: 99, 
             desc: "出卖灵魂，挥舞恶魔之剑的战士。", 
-            artPath: "textures/chars/small"  
+            artPath: "textures/chars/samll_background"  
         }
     ];
 
