@@ -130,6 +130,9 @@ export class BattlePlaceholderManager extends Component {
     private _energyLabel: Label | null = null;
     private _logLabel: Label | null = null;
     private _handRoot: Node | null = null;
+    private _relicTooltip: Node | null = null;
+    private _relicTooltipTitle: Label | null = null;
+    private _relicTooltipDesc: Label | null = null;
     private _enemyViews: EnemyView[] = [];
 
     async start(): Promise<void> {
@@ -212,6 +215,9 @@ export class BattlePlaceholderManager extends Component {
                 child.destroy();
             }
         }
+        this._relicTooltip = null;
+        this._relicTooltipTitle = null;
+        this._relicTooltipDesc = null;
 
         const vs = view.getVisibleSize();
         await this.buildBackground(vs.width, vs.height);
@@ -280,7 +286,9 @@ export class BattlePlaceholderManager extends Component {
         const defs = this.relicDefs();
         const root = new Node('BattleRelicBar');
         this.node.addChild(root);
-        root.setPosition(-w * 0.5 + 92, h * 0.5 - 118, 0);
+        const barX = -w * 0.5 + 92;
+        const barY = h * 0.5 - 118;
+        root.setPosition(barX, barY, 0);
         const rootUt = root.addComponent(UITransform);
         rootUt.setContentSize(360, 54);
 
@@ -298,11 +306,17 @@ export class BattlePlaceholderManager extends Component {
             const def = visibleDefs[i];
             const slot = new Node(`Relic_${def.id}`);
             root.addChild(slot);
-            slot.setPosition(startX + i * (iconSize + gap), 0, 0);
+            const slotX = startX + i * (iconSize + gap);
+            slot.setPosition(slotX, 0, 0);
             const ut = slot.addComponent(UITransform);
             ut.setContentSize(iconSize + 6, iconSize + 6);
             const bg = slot.addComponent(Graphics);
             paintRoundRect(bg, iconSize + 6, iconSize + 6, new Color(18, 22, 30, 225), new Color(176, 148, 86, 255), 2);
+            slot.on(Node.EventType.MOUSE_ENTER, () => this.showRelicTooltip(def, barX + slotX, barY, w, h), this);
+            slot.on(Node.EventType.MOUSE_LEAVE, () => this.hideRelicTooltip(), this);
+            slot.on(Node.EventType.TOUCH_START, () => this.showRelicTooltip(def, barX + slotX, barY, w, h), this);
+            slot.on(Node.EventType.TOUCH_END, () => this.hideRelicTooltip(), this);
+            slot.on(Node.EventType.TOUCH_CANCEL, () => this.hideRelicTooltip(), this);
 
             const icon = new Node('Icon');
             slot.addChild(icon);
@@ -318,6 +332,67 @@ export class BattlePlaceholderManager extends Component {
                 this.addLabel(icon, 'Fallback', iconSize, iconSize, 0, 0, 16, new Color(255, 218, 120, 255)).string = def.name.slice(0, 1);
             }
         }
+    }
+
+    private showRelicTooltip(def: RelicDef, iconX: number, iconY: number, w: number, h: number): void {
+        const tooltip = this.ensureRelicTooltip();
+        const tooltipW = 320;
+        const tooltipH = 94;
+        const minX = -w * 0.5 + tooltipW * 0.5 + 18;
+        const maxX = w * 0.5 - tooltipW * 0.5 - 18;
+        const x = Math.min(maxX, Math.max(minX, iconX + tooltipW * 0.5 + 32));
+        const minY = -h * 0.5 + tooltipH * 0.5 + 18;
+        const maxY = h * 0.5 - 76 - tooltipH * 0.5;
+        const y = Math.min(maxY, Math.max(minY, iconY - tooltipH * 0.5 - 18));
+
+        tooltip.setPosition(x, y, 0);
+        tooltip.active = true;
+        tooltip.setSiblingIndex(this.node.children.length - 1);
+
+        if (this._relicTooltipTitle) {
+            this._relicTooltipTitle.string = def.name;
+        }
+        if (this._relicTooltipDesc) {
+            this._relicTooltipDesc.string = def.description;
+        }
+    }
+
+    private hideRelicTooltip(): void {
+        if (this._relicTooltip) {
+            this._relicTooltip.active = false;
+        }
+    }
+
+    private ensureRelicTooltip(): Node {
+        if (this._relicTooltip && this._relicTooltip.isValid) {
+            return this._relicTooltip;
+        }
+
+        const tooltipW = 320;
+        const tooltipH = 94;
+        const tooltip = new Node('RelicTooltip');
+        this.node.addChild(tooltip);
+        tooltip.active = false;
+        const ut = tooltip.addComponent(UITransform);
+        ut.setContentSize(tooltipW, tooltipH);
+        const g = tooltip.addComponent(Graphics);
+        paintRoundRect(g, tooltipW, tooltipH, new Color(18, 22, 30, 242), new Color(214, 176, 96, 255), 2);
+
+        this._relicTooltipTitle = this.addLabel(tooltip, 'Title', tooltipW - 28, 30, 0, 24, 20, new Color(255, 218, 128, 255));
+        this._relicTooltipTitle.horizontalAlign = Label.HorizontalAlign.LEFT;
+        this._relicTooltipTitle.overflow = Label.Overflow.CLAMP;
+        this._relicTooltipTitle.enableWrapText = false;
+        this._relicTooltipTitle.isBold = true;
+        this._relicTooltipTitle.node.getComponent(UITransform)?.setContentSize(tooltipW - 28, 30);
+        this._relicTooltipDesc = this.addLabel(tooltip, 'Desc', tooltipW - 28, 46, 0, -18, 16, new Color(225, 232, 244, 255));
+        this._relicTooltipDesc.horizontalAlign = Label.HorizontalAlign.LEFT;
+        this._relicTooltipDesc.overflow = Label.Overflow.CLAMP;
+        this._relicTooltipDesc.enableWrapText = true;
+        this._relicTooltipDesc.lineHeight = 22;
+        this._relicTooltipDesc.node.getComponent(UITransform)?.setContentSize(tooltipW - 28, 46);
+
+        this._relicTooltip = tooltip;
+        return tooltip;
     }
 
     private buildEnemyPanels(w: number, _h: number): void {
