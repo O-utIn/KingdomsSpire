@@ -216,6 +216,7 @@ export class BattlePlaceholderManager extends Component {
         const vs = view.getVisibleSize();
         await this.buildBackground(vs.width, vs.height);
         await this.buildPlayerPanel(vs.width, vs.height);
+        await this.buildRelicIcons(vs.width, vs.height);
         this.buildEnemyPanels(vs.width, vs.height);
         this.buildLogPanel(vs.width, vs.height);
         this.buildHandPanel(vs.width, vs.height);
@@ -271,29 +272,27 @@ export class BattlePlaceholderManager extends Component {
         }
 
         this._playerHpLabel = this.addLabel(root, 'PlayerHp', 270, 28, 0, -24, 22, new Color(245, 232, 224, 255));
-        await this.buildRelicIcons(root);
         this._playerBlockLabel = this.addLabel(root, 'PlayerBlock', 270, 28, 0, -112, 20, new Color(190, 225, 255, 255));
         this._energyLabel = this.addLabel(root, 'Energy', 270, 30, 0, -143, 22, new Color(150, 225, 255, 255));
     }
 
-    private async buildRelicIcons(parent: Node): Promise<void> {
+    private async buildRelicIcons(w: number, h: number): Promise<void> {
         const defs = this.relicDefs();
-        const root = new Node('RelicIcons');
-        parent.addChild(root);
-        root.setPosition(0, -70, 0);
+        const root = new Node('BattleRelicBar');
+        this.node.addChild(root);
+        root.setPosition(-w * 0.5 + 92, h * 0.5 - 118, 0);
         const rootUt = root.addComponent(UITransform);
-        rootUt.setContentSize(270, 42);
+        rootUt.setContentSize(360, 54);
 
         if (defs.length === 0) {
             this.addLabel(root, 'EmptyRelics', 240, 32, 0, 0, 16, new Color(192, 202, 216, 255)).string = '遗物：无';
             return;
         }
 
-        const iconSize = 34;
-        const gap = 10;
-        const visibleDefs = defs.slice(0, 6);
-        const totalW = visibleDefs.length * iconSize + (visibleDefs.length - 1) * gap;
-        const startX = -totalW * 0.5 + iconSize * 0.5;
+        const iconSize = 42;
+        const gap = 12;
+        const visibleDefs = defs.slice(0, 8);
+        const startX = iconSize * 0.5;
 
         for (let i = 0; i < visibleDefs.length; i++) {
             const def = visibleDefs[i];
@@ -312,8 +311,9 @@ export class BattlePlaceholderManager extends Component {
             const sf = await loadSpriteFrame(def.iconPath);
             if (sf) {
                 const sp = icon.addComponent(Sprite);
-                sp.spriteFrame = sf;
                 sp.sizeMode = Sprite.SizeMode.CUSTOM;
+                sp.spriteFrame = sf;
+                iconUt.setContentSize(iconSize, iconSize);
             } else {
                 this.addLabel(icon, 'Fallback', iconSize, iconSize, 0, 0, 16, new Color(255, 218, 120, 255)).string = def.name.slice(0, 1);
             }
