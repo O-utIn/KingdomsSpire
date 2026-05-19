@@ -6,6 +6,9 @@ export const SCENE_GAME_MAP = 'GameMap';
 /** 与 `assets/scenes/Battle.scene` 资源名一致（不含扩展名） */
 export const SCENE_BATTLE = 'Battle';
 
+/** 与 `assets/scenes/Event.scene` 资源名一致（不含扩展名）- 事件房间（兴趣点） */
+export const SCENE_EVENT = 'Event';
+
 // 角色数据接口
 export interface CharData {
     id: number;

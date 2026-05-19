@@ -18,7 +18,7 @@ import {
     Widget,
     view,
 } from 'cc';
-import { SCENE_BATTLE } from './GameConfig';
+import { SCENE_BATTLE, SCENE_EVENT } from './GameConfig';
 import { GlobalData } from './GlobalData';
 import { RunHudManager } from './RunHudManager';
 
@@ -586,6 +586,13 @@ export class MapScreenManager extends Component {
             director.loadScene(SCENE_BATTLE, (err) => {
                 if (err) {
                     console.error('[MapScreenManager] 进入战斗场景失败（请确认构建已包含 Battle）', err);
+                }
+            });
+        } else if (next && next.kind === 'event') {
+            // 进入事件房间（兴趣点）
+            director.loadScene(SCENE_EVENT, (err) => {
+                if (err) {
+                    console.error('[MapScreenManager] 进入事件场景失败（请确认构建已包含 Event）', err);
                 }
             });
         }
