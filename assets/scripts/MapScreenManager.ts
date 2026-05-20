@@ -68,6 +68,12 @@ interface GraphNode {
     children: number[];
 }
 
+interface ShopPurchaseBinding {
+    buy: (event?: EventTouch | EventMouse) => void;
+    button: Node;
+    sold: Node;
+}
+
 /** 自下而上分叉 DAG；底层中间为起点，向左右分叉，贴近参考图 */
 const MAP_GRAPH: GraphNode[] = (() => {
     const y = (f: number) => -430 + f * 138;
@@ -109,6 +115,11 @@ const SHOP_BACK_BUTTON = 'textures/shop/back_button';
 const SHOP_BACK_ARROW = 'textures/shop/settings_tiny_left_arrow';
 const SHOP_REMOVE_ICON = 'textures/shop/card_removal_00';
 const SHOP_GOLD_ICON = 'textures/shop/top_bar_gold';
+const SHOP_POTION_DESCRIPTIONS: Record<string, string> = {
+    fire_potion: '造成 20 点伤害。',
+    swift_potion: '抽 3 张牌。',
+    blood_potion: '回复 20% 最大生命。',
+};
 const LEGEND_ROWS: { path: string; text: string }[] = [
     { path: ICON.event, text: '未知' },
     { path: ICON.shop, text: '商人' },
@@ -756,7 +767,7 @@ export class MapScreenManager extends Component {
         ];
         for (const item of relicItems) {
             const relic = getRelicDef(item.id);
-            await this.makeShopBoardIconItem(panel, item.node, relic?.name ?? item.id, relic?.iconPath ?? ICON.shop, item.price, item.x, item.y, () => {
+            await this.makeShopBoardIconItem(panel, item.node, relic?.name ?? item.id, relic?.iconPath ?? ICON.shop, item.price, item.x, item.y, relic?.description ?? '', () => {
                 const hero = gd.selectedChar;
                 if (!hero || hero.gold < item.price || resolved) {
                     showStatus('金币不足，无法购买遗物。');
@@ -780,7 +791,7 @@ export class MapScreenManager extends Component {
             { node: 'PotionBlood', id: 'blood_potion', title: '鲜血药水', art: 'textures/potions/blood_potion', price: 49, x: 620, y: -238 },
         ];
         for (const item of potionItems) {
-            await this.makeShopBoardIconItem(panel, item.node, item.title, item.art, item.price, item.x, item.y, () => {
+            await this.makeShopBoardIconItem(panel, item.node, item.title, item.art, item.price, item.x, item.y, SHOP_POTION_DESCRIPTIONS[item.id], () => {
                 const hero = gd.selectedChar;
                 if (!hero || hero.gold < item.price || resolved) {
                     showStatus('金币不足，无法购买药水。');
@@ -1363,11 +1374,8 @@ export class MapScreenManager extends Component {
             paintRoundRect(tg, 42, 32, new Color(211, 55, 45, 255), new Color(255, 205, 132, 255), 2);
             this.addModalLabel(tag, 'Pct', 36, 28, 0, 0, 24, new Color(255, 230, 126, 255), Label.HorizontalAlign.CENTER).string = '%';
         }
-        await this.addShopPriceButton(slot, 'BuyCard', price, 0, -138, onBuy, enabled);
-        slot.on(Node.EventType.MOUSE_ENTER, () => {
-            const lb = slot.getChildByName('CardNameTooltip') ?? this.addModalLabel(slot, 'CardNameTooltip', 170, 28, 0, 142, 18, new Color(255, 242, 190, 255), Label.HorizontalAlign.CENTER).node;
-            lb.getComponent(Label)!.string = `${title}  ${cost}费`;
-        }, this);
+        const purchase = await this.addShopPriceButton(slot, 'BuyCard', price, 0, -138, onBuy, enabled);
+        this.bindShopPurchase(slot, purchase, enabled);
     }
 
     private async makeShopBoardIconItem(
@@ -1378,6 +1386,7 @@ export class MapScreenManager extends Component {
         price: number,
         x: number,
         y: number,
+        effectText: string,
         onBuy: () => boolean,
         enabled: boolean,
     ): Promise<void> {
@@ -1385,13 +1394,12 @@ export class MapScreenManager extends Component {
         parent.addChild(slot);
         slot.setPosition(x, y, 0);
         const ut = slot.addComponent(UITransform);
-        ut.setContentSize(88, 116);
-        await this.addSpriteFromPath(slot, 'Icon', artPath, 58, 58, 0, 24, new Color(255, 255, 255, enabled ? 255 : 145));
-        await this.addShopPriceButton(slot, 'BuyIcon', price, 0, -42, onBuy, enabled);
-        slot.on(Node.EventType.MOUSE_ENTER, () => {
-            const lb = slot.getChildByName('IconNameTooltip') ?? this.addModalLabel(slot, 'IconNameTooltip', 130, 24, 0, 68, 14, new Color(255, 242, 190, 255), Label.HorizontalAlign.CENTER).node;
-            lb.getComponent(Label)!.string = title;
-        }, this);
+        ut.setContentSize(132, 150);
+        await this.addSpriteFromPath(slot, 'Icon', artPath, 58, 58, 0, 34, new Color(255, 255, 255, enabled ? 255 : 145));
+        this.addModalLabel(slot, 'IconName', 136, 24, 0, -10, 14, new Color(255, 238, 190, 255), Label.HorizontalAlign.CENTER).string = title;
+        const purchase = await this.addShopPriceButton(slot, 'BuyIcon', price, 0, -54, onBuy, enabled);
+        this.bindShopPurchase(slot, purchase, enabled);
+        this.addShopHoverInfo(slot, title, effectText);
     }
 
     private async makeShopBoardRemove(parent: Node, name: string, price: number, x: number, y: number, onBuy: () => boolean, enabled: boolean): Promise<void> {
@@ -1401,7 +1409,9 @@ export class MapScreenManager extends Component {
         const ut = slot.addComponent(UITransform);
         ut.setContentSize(142, 142);
         await this.addSpriteFromPath(slot, 'RemoveIcon', SHOP_REMOVE_ICON, 122, 122, 0, 18, new Color(255, 255, 255, enabled ? 255 : 145));
-        await this.addShopPriceButton(slot, 'BuyRemove', price, 0, -70, onBuy, enabled);
+        this.addModalLabel(slot, 'RemoveName', 130, 24, 0, -44, 14, new Color(255, 238, 190, 255), Label.HorizontalAlign.CENTER).string = '卡牌移除';
+        const purchase = await this.addShopPriceButton(slot, 'BuyRemove', price, 0, -82, onBuy, enabled);
+        this.bindShopPurchase(slot, purchase, enabled);
     }
 
     private async makeShopBackButton(parent: Node, onClick: () => void): Promise<void> {
@@ -1415,7 +1425,40 @@ export class MapScreenManager extends Component {
         btn.on(Node.EventType.TOUCH_END, onClick, this);
     }
 
-    private async addShopPriceButton(parent: Node, name: string, price: number, x: number, y: number, onBuy: () => boolean, enabled: boolean): Promise<void> {
+    private bindShopPurchase(target: Node, purchase: ShopPurchaseBinding, enabled: boolean): void {
+        if (!enabled) {
+            return;
+        }
+        target.on(Node.EventType.TOUCH_END, purchase.buy, this);
+        target.on(Node.EventType.MOUSE_UP, purchase.buy, this);
+    }
+
+    private addShopHoverInfo(parent: Node, title: string, effectText: string): void {
+        if (!effectText) {
+            return;
+        }
+        const tip = new Node('HoverInfo');
+        parent.addChild(tip);
+        tip.setPosition(0, 118, 0);
+        const ut = tip.addComponent(UITransform);
+        ut.setContentSize(220, 84);
+        const g = tip.addComponent(Graphics);
+        paintRoundRect(g, 220, 84, new Color(24, 28, 34, 248), new Color(220, 175, 92, 255), 2);
+        this.addModalLabel(tip, 'HoverTitle', 196, 24, 0, 22, 16, new Color(255, 226, 145, 255), Label.HorizontalAlign.CENTER).string = title;
+        const body = this.addModalLabel(tip, 'HoverBody', 196, 46, 0, -17, 14, new Color(232, 238, 244, 255), Label.HorizontalAlign.CENTER);
+        body.lineHeight = 18;
+        body.string = effectText;
+        tip.active = false;
+        parent.on(Node.EventType.MOUSE_ENTER, () => {
+            tip.active = true;
+            tip.setSiblingIndex(parent.children.length - 1);
+        }, this);
+        parent.on(Node.EventType.MOUSE_LEAVE, () => {
+            tip.active = false;
+        }, this);
+    }
+
+    private async addShopPriceButton(parent: Node, name: string, price: number, x: number, y: number, onBuy: () => boolean, enabled: boolean): Promise<ShopPurchaseBinding> {
         const soldLabel = this.addModalLabel(parent, `${name}Sold`, 80, 28, x, y, 17, new Color(190, 198, 206, 255), Label.HorizontalAlign.CENTER);
         soldLabel.string = '售罄';
         const sold = soldLabel.node;
@@ -1429,14 +1472,27 @@ export class MapScreenManager extends Component {
         const lb = this.addModalLabel(btn, 'Price', 58, 30, 14, 0, 19, enabled ? new Color(255, 226, 114, 255) : new Color(170, 176, 184, 255), Label.HorizontalAlign.LEFT);
         lb.string = `${price}`;
         btn.active = enabled;
+        let completed = !enabled;
+        const buy = (event?: EventTouch | EventMouse) => {
+            const evt = event as unknown as { propagationStopped?: boolean; stopPropagation?: () => void } | undefined;
+            if (evt) {
+                evt.propagationStopped = true;
+                evt.stopPropagation?.();
+            }
+            if (completed) {
+                return;
+            }
+            if (onBuy()) {
+                completed = true;
+                btn.active = false;
+                sold.active = true;
+            }
+        };
         if (enabled) {
-            btn.on(Node.EventType.TOUCH_END, () => {
-                if (onBuy()) {
-                    btn.active = false;
-                    sold.active = true;
-                }
-            }, this);
+            btn.on(Node.EventType.TOUCH_END, buy, this);
+            btn.on(Node.EventType.MOUSE_UP, buy, this);
         }
+        return { buy, button: btn, sold };
     }
 
     private createModal(name: string, title: string, subtitle: string): { root: Node; panel: Node } {
