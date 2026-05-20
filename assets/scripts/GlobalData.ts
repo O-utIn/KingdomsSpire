@@ -27,6 +27,8 @@ export class GlobalData {
     public initialRewardChoiceIndex: number = -1;
     public deckCount: number = 17;
     public deckIds: CardId[] = [];
+    public potionIds: string[] = [];
+    public shopRemovalCount: number = 0;
     public runHudCenterText: string = '';
 
     /** 地图进入战斗前写入，战斗场景用它决定怪物组和奖励 */
@@ -50,6 +52,8 @@ export class GlobalData {
         this.pendingEncounterNodeId = -1;
         this.deckIds = [];
         this.deckCount = 17;
+        this.potionIds = [];
+        this.shopRemovalCount = 0;
         this.resolvedMapNodeIds = [];
         this.runHudCenterText = '';
     }

@@ -94,10 +94,21 @@ const ZOOM_MAX = 2.4;
 const ZOOM_WHEEL_STEP = 0.09;
 const CAMPFIRE_REST_RATIO = 0.3;
 const SHOP_CARD_ID: CardId = 'bash';
+const SHOP_SKILL_CARD_ID: CardId = 'survivor';
 const SHOP_RELIC_ID: RelicId = 'neow_golden_rose';
 const SHOP_CARD_COST = 55;
+const SHOP_SKILL_CARD_COST = 45;
 const SHOP_RELIC_COST = 80;
-const SHOP_REMOVE_COST = 40;
+const SHOP_REMOVE_BASE_COST = 75;
+const SHOP_REMOVE_COST_STEP = 25;
+const SHOP_REMOVE_COST = SHOP_REMOVE_BASE_COST;
+const SHOP_MERCHANT_ART = 'textures/events/StS2_Relic_Trader';
+const CAMPFIRE_REST_ART = 'textures/shop/restsite_ironclad';
+const SHOP_RUG_FULL = 'textures/shop/shop_rug_full';
+const SHOP_BACK_BUTTON = 'textures/shop/back_button';
+const SHOP_BACK_ARROW = 'textures/shop/settings_tiny_left_arrow';
+const SHOP_REMOVE_ICON = 'textures/shop/card_removal_00';
+const SHOP_GOLD_ICON = 'textures/shop/top_bar_gold';
 const LEGEND_ROWS: { path: string; text: string }[] = [
     { path: ICON.event, text: '未知' },
     { path: ICON.shop, text: '商人' },
@@ -627,12 +638,293 @@ export class MapScreenManager extends Component {
         }
 
         if (next?.kind === 'rest') {
-            this.showCampfire(nodeId);
+            void this.showCampfireSpireStyle(nodeId);
             return;
         }
         if (next?.kind === 'shop') {
-            this.showShop(nodeId);
+            void this.showShopBoardStyle(nodeId);
         }
+    }
+
+    private async showCampfireSpireStyle(nodeId: number): Promise<void> {
+        const { panel } = this.createSceneModal('CampfireSpirePanel', 980, 560);
+        const gd = GlobalData.instance;
+        const ch = gd.selectedChar;
+        const resolved = gd.isMapNodeResolved(nodeId);
+
+        this.addModalLabel(panel, 'CampTitle', 880, 42, 0, 226, 34, new Color(255, 219, 126, 255), Label.HorizontalAlign.CENTER).string = '营火';
+        const status = this.addModalLabel(panel, 'CampStatus', 760, 34, 0, 184, 19, new Color(224, 232, 240, 255), Label.HorizontalAlign.CENTER);
+        status.string = resolved
+            ? '这个营火已经使用过。'
+            : ch
+                ? `生命 ${ch.hp}/${ch.maxHp}    牌组 ${gd.deckIds.length || gd.deckCount} 张`
+                : '当前没有角色数据。';
+
+        await this.drawCampfireBackdrop(panel);
+        await this.addSpriteFromPath(panel, 'RestSiteIcon', ICON.rest, 82, 82, -360, 90, new Color(255, 245, 220, 255));
+
+        const restNode = this.makeCampfireOption(panel, 'RestOption', '休息', '回复 30% 最大生命', -130, 8, !resolved && !!ch);
+        const smithEnabled = !resolved && gd.deckIds.includes('strike');
+        const smithNode = this.makeCampfireOption(panel, 'SmithOption', '锻造', '将一张打击升级为打击+', 142, 8, smithEnabled);
+
+        restNode.on(Node.EventType.TOUCH_END, () => {
+            const hero = gd.selectedChar;
+            if (!hero || gd.isMapNodeResolved(nodeId)) {
+                return;
+            }
+            const before = hero.hp;
+            const amount = Math.max(1, Math.floor(hero.maxHp * CAMPFIRE_REST_RATIO));
+            hero.hp = Math.min(hero.maxHp, hero.hp + amount);
+            gd.markMapNodeResolved(nodeId);
+            status.string = hero.hp > before ? `休息完成，回复 ${hero.hp - before} 点生命。` : '休息完成，生命已经是满值。';
+            restNode.active = false;
+            smithNode.active = false;
+            RunHudManager.startRun();
+        }, this);
+
+        smithNode.on(Node.EventType.TOUCH_END, () => {
+            if (gd.isMapNodeResolved(nodeId)) {
+                return;
+            }
+            const idx = gd.deckIds.indexOf('strike');
+            if (idx < 0) {
+                status.string = '牌组里已经没有可升级的打击。';
+                return;
+            }
+            gd.deckIds[idx] = 'strike_plus';
+            gd.deckCount = gd.deckIds.length;
+            gd.markMapNodeResolved(nodeId);
+            status.string = '锻造完成，一张打击升级为打击+。';
+            restNode.active = false;
+            smithNode.active = false;
+            RunHudManager.startRun();
+        }, this);
+
+        this.makeModalButton(panel, 'LeaveCampfire', '离开', 170, 54, 0, -218, () => {
+            this.closeModal();
+            this.refreshRunHud();
+        }, true);
+        RunHudManager.setCenterText('营火  |  Rest / Smith');
+    }
+
+    private async showShopBoardStyle(nodeId: number): Promise<void> {
+        const { panel } = this.createSceneModal('ShopBoardPanel', 1760, 900);
+        const gd = GlobalData.instance;
+        const resolved = gd.isMapNodeResolved(nodeId);
+        const removalCost = SHOP_REMOVE_BASE_COST + gd.shopRemovalCount * SHOP_REMOVE_COST_STEP;
+        const status = this.addModalLabel(panel, 'ShopBoardStatus', 740, 36, 340, 390, 24, new Color(255, 238, 190, 255), Label.HorizontalAlign.RIGHT);
+        const showStatus = (msg?: string) => {
+            status.string = msg ? `金币 ${gd.selectedChar?.gold ?? 0}    ${msg}` : `金币 ${gd.selectedChar?.gold ?? 0}`;
+        };
+
+        await this.drawShopBoardBackdrop(panel);
+        await this.addSpriteFromPath(panel, 'ShopMapIcon', ICON.shop, 72, 72, -788, 350, new Color(255, 240, 190, 255));
+        this.addModalLabel(panel, 'ShopBoardTitle', 290, 46, -700, 350, 38, new Color(255, 225, 150, 255), Label.HorizontalAlign.LEFT).string = '商店';
+        showStatus(resolved ? '这个商店已经结算。' : undefined);
+
+        const buyCard = (cardId: CardId, title: string, price: number): boolean => {
+            const hero = gd.selectedChar;
+            if (!hero || hero.gold < price || resolved) {
+                showStatus('金币不足，无法购买卡牌。');
+                return false;
+            }
+            hero.gold -= price;
+            gd.deckIds.push(cardId);
+            gd.deckCount = gd.deckIds.length;
+            RunHudManager.startRun();
+            showStatus(`购买卡牌：${title}`);
+            return true;
+        };
+
+        const cardItems = [
+            { node: 'ShopC1', title: '重击', id: SHOP_CARD_ID, cost: 2, price: 49, x: -520, y: 178, art: 'textures/cards/bash', sale: false },
+            { node: 'ShopC2', title: '完美打击', id: SHOP_CARD_ID, cost: 2, price: 24, x: -310, y: 178, art: 'textures/cards/perfected_strike', sale: true },
+            { node: 'ShopC3', title: '生存者', id: SHOP_SKILL_CARD_ID, cost: 1, price: 74, x: -100, y: 178, art: 'textures/cards/survivor', sale: false },
+            { node: 'ShopC4', title: '破灭', id: SHOP_CARD_ID, cost: 1, price: 50, x: 110, y: 178, art: 'textures/cards/bash', sale: false },
+            { node: 'ShopC5', title: '惊逃', id: SHOP_SKILL_CARD_ID, cost: 2, price: 77, x: 320, y: 178, art: 'textures/cards/survivor', sale: false },
+            { node: 'ShopC6', title: '净化', id: SHOP_SKILL_CARD_ID, cost: 0, price: 89, x: -420, y: -170, art: 'textures/cards/cleanse', sale: false },
+            { node: 'ShopC7', title: '狠揍', id: SHOP_CARD_ID, cost: 3, price: 168, x: -190, y: -170, art: 'textures/cards/perfected_strike', sale: false },
+        ];
+        for (const item of cardItems) {
+            await this.makeShopBoardCard(panel, item.node, item.title, item.cost, item.price, item.x, item.y, item.art, item.sale, () => buyCard(item.id, item.title, item.price), !resolved);
+        }
+
+        const relicItems: { node: string; id: RelicId; price: number; x: number; y: number }[] = [
+            { node: 'ShopRelicEnergy', id: 'neow_energy_core', price: 250, x: 220, y: -18 },
+            { node: 'ShopRelicWing', id: 'neow_spirit_wing', price: 251, x: 420, y: -18 },
+            { node: 'ShopRelicRose', id: 'neow_golden_rose', price: 225, x: 620, y: -18 },
+        ];
+        for (const item of relicItems) {
+            const relic = getRelicDef(item.id);
+            await this.makeShopBoardIconItem(panel, item.node, relic?.name ?? item.id, relic?.iconPath ?? ICON.shop, item.price, item.x, item.y, () => {
+                const hero = gd.selectedChar;
+                if (!hero || hero.gold < item.price || resolved) {
+                    showStatus('金币不足，无法购买遗物。');
+                    return false;
+                }
+                if (hero.relics.includes(item.id)) {
+                    showStatus('你已经拥有这件遗物。');
+                    return false;
+                }
+                hero.gold -= item.price;
+                hero.relics.push(item.id);
+                RunHudManager.startRun();
+                showStatus(`购买遗物：${relic?.name ?? item.id}`);
+                return true;
+            }, !resolved && !(gd.selectedChar?.relics.includes(item.id)));
+        }
+
+        const potionItems = [
+            { node: 'PotionFire', id: 'fire_potion', title: '火焰药水', art: 'textures/potions/fire_potion', price: 52, x: 220, y: -238 },
+            { node: 'PotionSwift', id: 'swift_potion', title: '敏捷药水', art: 'textures/potions/swift_potion', price: 73, x: 420, y: -238 },
+            { node: 'PotionBlood', id: 'blood_potion', title: '鲜血药水', art: 'textures/potions/blood_potion', price: 49, x: 620, y: -238 },
+        ];
+        for (const item of potionItems) {
+            await this.makeShopBoardIconItem(panel, item.node, item.title, item.art, item.price, item.x, item.y, () => {
+                const hero = gd.selectedChar;
+                if (!hero || hero.gold < item.price || resolved) {
+                    showStatus('金币不足，无法购买药水。');
+                    return false;
+                }
+                hero.gold -= item.price;
+                gd.potionIds.push(item.id);
+                RunHudManager.startRun();
+                showStatus(`购买药水：${item.title}`);
+                return true;
+            }, !resolved);
+        }
+
+        await this.makeShopBoardRemove(panel, 'CardRemovalService', removalCost, 718, -150, () => {
+            const hero = gd.selectedChar;
+            if (!hero || hero.gold < removalCost || resolved) {
+                showStatus('金币不足，无法使用删牌服务。');
+                return false;
+            }
+            const idx = gd.deckIds.indexOf('strike');
+            if (idx < 0) {
+                showStatus('牌组里没有可移除的打击。');
+                return false;
+            }
+            hero.gold -= removalCost;
+            gd.deckIds.splice(idx, 1);
+            gd.deckCount = gd.deckIds.length;
+            gd.shopRemovalCount += 1;
+            RunHudManager.startRun();
+            showStatus('移除一张打击。');
+            return true;
+        }, !resolved && gd.deckIds.includes('strike'));
+
+        await this.makeShopBackButton(panel, () => {
+            gd.markMapNodeResolved(nodeId);
+            this.closeModal();
+            this.refreshRunHud();
+        });
+        RunHudManager.setCenterText('商店  |  卡牌 / 遗物 / 药水 / 删牌服务');
+    }
+
+    private async showShopSpireStyle(nodeId: number): Promise<void> {
+        const { panel } = this.createSceneModal('ShopSpirePanel', 1080, 620);
+        const gd = GlobalData.instance;
+        const hero = gd.selectedChar;
+        const resolved = gd.isMapNodeResolved(nodeId);
+        const card = getCardDef(SHOP_CARD_ID);
+        const skillCard = getCardDef(SHOP_SKILL_CARD_ID);
+        const relic = getRelicDef(SHOP_RELIC_ID);
+        const removalCost = SHOP_REMOVE_BASE_COST + gd.shopRemovalCount * SHOP_REMOVE_COST_STEP;
+
+        this.drawShopBackdrop(panel);
+        await this.addSpriteFromPath(panel, 'ShopIcon', ICON.shop, 66, 66, -492, 252, new Color(255, 240, 190, 255));
+        await this.addSpriteFromPath(panel, 'MerchantArt', SHOP_MERCHANT_ART, 238, 186, -396, 38, new Color(245, 248, 255, 245));
+        this.addModalLabel(panel, 'ShopTitle', 450, 40, -264, 248, 31, new Color(255, 222, 140, 255), Label.HorizontalAlign.LEFT).string = '商店';
+        this.addModalLabel(panel, 'MerchantLine', 250, 44, -394, -92, 17, new Color(215, 224, 232, 255), Label.HorizontalAlign.CENTER).string = '买点什么？';
+
+        const status = this.addModalLabel(panel, 'ShopStatus', 700, 30, 132, 249, 18, new Color(232, 238, 244, 255), Label.HorizontalAlign.RIGHT);
+        const refreshGold = (message?: string) => {
+            const goldText = `金币 ${gd.selectedChar?.gold ?? 0}`;
+            status.string = message ? `${goldText}    ${message}` : goldText;
+        };
+        refreshGold(resolved ? '这个商店已经结算。' : undefined);
+
+        this.addShelfLabel(panel, 'CardShelfLabel', '卡牌货架', -112, 166);
+        const cardSlot = this.makeShopCardSlot(panel, 'ShopCardBash', -214, 56, card?.name ?? SHOP_CARD_ID, card?.cost ?? 1, card?.description ?? '', SHOP_CARD_COST, () => {
+            const h = gd.selectedChar;
+            if (!h || h.gold < SHOP_CARD_COST || resolved) {
+                refreshGold('金币不足，无法购买卡牌。');
+                return false;
+            }
+            h.gold -= SHOP_CARD_COST;
+            gd.deckIds.push(SHOP_CARD_ID);
+            gd.deckCount = gd.deckIds.length;
+            RunHudManager.startRun();
+            refreshGold(`购买 ${card?.name ?? SHOP_CARD_ID}。`);
+            return true;
+        }, !resolved);
+        const skillSlot = this.makeShopCardSlot(panel, 'ShopCardSkill', -46, 56, skillCard?.name ?? SHOP_SKILL_CARD_ID, skillCard?.cost ?? 1, skillCard?.description ?? '', SHOP_SKILL_CARD_COST, () => {
+            const h = gd.selectedChar;
+            if (!h || h.gold < SHOP_SKILL_CARD_COST || resolved) {
+                refreshGold('金币不足，无法购买卡牌。');
+                return false;
+            }
+            h.gold -= SHOP_SKILL_CARD_COST;
+            gd.deckIds.push(SHOP_SKILL_CARD_ID);
+            gd.deckCount = gd.deckIds.length;
+            RunHudManager.startRun();
+            refreshGold(`购买 ${skillCard?.name ?? SHOP_SKILL_CARD_ID}。`);
+            return true;
+        }, !resolved);
+        cardSlot.on(Node.EventType.MOUSE_ENTER, () => refreshGold(card?.description), this);
+        skillSlot.on(Node.EventType.MOUSE_ENTER, () => refreshGold(skillCard?.description), this);
+
+        this.addShelfLabel(panel, 'RelicShelfLabel', '遗物', 198, 166);
+        const relicSlot = this.makeShopRelicSlot(panel, 'ShopRelic', 206, 62, relic?.name ?? SHOP_RELIC_ID, relic?.description ?? '', SHOP_RELIC_COST, () => {
+            const h = gd.selectedChar;
+            if (!h || h.gold < SHOP_RELIC_COST || resolved) {
+                refreshGold('金币不足，无法购买遗物。');
+                return false;
+            }
+            if (h.relics.includes(SHOP_RELIC_ID)) {
+                refreshGold('你已经拥有这件遗物。');
+                return false;
+            }
+            h.gold -= SHOP_RELIC_COST;
+            h.relics.push(SHOP_RELIC_ID);
+            RunHudManager.startRun();
+            refreshGold(`购买 ${relic?.name ?? SHOP_RELIC_ID}。`);
+            return true;
+        }, !resolved && !(hero?.relics.includes(SHOP_RELIC_ID)));
+        if (relic?.iconPath) {
+            await this.addSpriteFromPath(relicSlot, 'RelicIcon', relic.iconPath, 68, 68, 0, 30, new Color(255, 255, 255, 255));
+        }
+        relicSlot.on(Node.EventType.MOUSE_ENTER, () => refreshGold(relic?.description), this);
+
+        this.addShelfLabel(panel, 'ServiceShelfLabel', '服务', 388, 166);
+        const serviceSlot = this.makeShopServiceSlot(panel, 'CardRemoveService', 392, 56, removalCost, () => {
+            const h = gd.selectedChar;
+            if (!h || h.gold < removalCost || resolved) {
+                refreshGold('金币不足，无法使用删牌服务。');
+                return false;
+            }
+            const idx = gd.deckIds.indexOf('strike');
+            if (idx < 0) {
+                refreshGold('牌组里没有可移除的打击。');
+                return false;
+            }
+            h.gold -= removalCost;
+            gd.deckIds.splice(idx, 1);
+            gd.deckCount = gd.deckIds.length;
+            gd.shopRemovalCount += 1;
+            RunHudManager.startRun();
+            refreshGold('移除一张打击。');
+            return true;
+        }, !resolved && gd.deckIds.includes('strike'));
+        serviceSlot.on(Node.EventType.MOUSE_ENTER, () => refreshGold('每个商店只能使用一次，价格会随本局使用次数提高。'), this);
+
+        this.makeModalButton(panel, 'LeaveShop', '离开', 170, 54, 398, -244, () => {
+            gd.markMapNodeResolved(nodeId);
+            this.closeModal();
+            this.refreshRunHud();
+        }, true);
+        RunHudManager.setCenterText('商店  |  独立购买商品');
     }
 
     private showCampfire(nodeId: number): void {
@@ -794,6 +1086,357 @@ export class MapScreenManager extends Component {
         }, enabled);
         const sold = this.addModalLabel(card, 'Sold', 150, 44, 0, -108, 18, new Color(170, 178, 190, 255), Label.HorizontalAlign.CENTER).node;
         sold.active = !enabled;
+    }
+
+    private createSceneModal(name: string, w: number, h: number): { root: Node; panel: Node } {
+        this.closeModal();
+        const vs = view.getVisibleSize();
+        const root = new Node(`${name}Overlay`);
+        this.node.addChild(root);
+        root.setSiblingIndex(this.node.children.length - 1);
+        const rUt = root.addComponent(UITransform);
+        rUt.setContentSize(vs.width, vs.height);
+        root.addComponent(BlockInputEvents);
+        const shade = root.addComponent(Graphics);
+        shade.fillColor = new Color(0, 0, 0, 172);
+        shade.rect(-vs.width * 0.5, -vs.height * 0.5, vs.width, vs.height);
+        shade.fill();
+        root.on(Node.EventType.TOUCH_START, () => {}, this);
+
+        const panel = new Node(name);
+        root.addChild(panel);
+        const pUt = panel.addComponent(UITransform);
+        pUt.setContentSize(w, h);
+        const pg = panel.addComponent(Graphics);
+        paintRoundRect(pg, w, h, new Color(18, 22, 30, 250), new Color(190, 141, 74, 255), 3);
+        this._modalRoot = root;
+        return { root, panel };
+    }
+
+    private async drawCampfireBackdrop(parent: Node): Promise<void> {
+        const floor = new Node('CampFloor');
+        parent.addChild(floor);
+        floor.setPosition(0, -54, 0);
+        const fut = floor.addComponent(UITransform);
+        fut.setContentSize(860, 270);
+        const fg = floor.addComponent(Graphics);
+        fg.fillColor = new Color(29, 34, 44, 245);
+        fg.roundRect(-430, -135, 860, 270, 8);
+        fg.fill();
+        fg.fillColor = new Color(58, 48, 40, 245);
+        fg.rect(-410, -128, 820, 26);
+        fg.fill();
+        fg.lineWidth = 3;
+        fg.strokeColor = new Color(118, 86, 54, 220);
+        fg.moveTo(-420, -36);
+        fg.lineTo(420, -36);
+        fg.stroke();
+        await this.addSpriteFromPath(parent, 'CampfireRestArt', CAMPFIRE_REST_ART, 340, 250, -302, -12, new Color(255, 248, 232, 255));
+    }
+
+    private drawShopBackdrop(parent: Node): void {
+        const wall = new Node('ShopWall');
+        parent.addChild(wall);
+        const wut = wall.addComponent(UITransform);
+        wut.setContentSize(1010, 520);
+        const g = wall.addComponent(Graphics);
+        g.fillColor = new Color(32, 28, 32, 245);
+        g.roundRect(-505, -260, 1010, 520, 8);
+        g.fill();
+        g.fillColor = new Color(58, 38, 30, 245);
+        g.rect(-505, -260, 1010, 92);
+        g.fill();
+        g.fillColor = new Color(83, 56, 38, 245);
+        g.rect(-286, -152, 690, 26);
+        g.fill();
+        g.rect(-286, 122, 690, 24);
+        g.fill();
+        g.lineWidth = 3;
+        g.strokeColor = new Color(167, 116, 62, 230);
+        g.moveTo(-286, -124);
+        g.lineTo(404, -124);
+        g.stroke();
+        g.moveTo(-286, 150);
+        g.lineTo(404, 150);
+        g.stroke();
+        g.fillColor = new Color(22, 24, 30, 236);
+        g.roundRect(-504, -216, 282, 380, 8);
+        g.fill();
+    }
+
+    private async addSpriteFromPath(parent: Node, name: string, path: string, w: number, h: number, x: number, y: number, tint?: Color): Promise<Node | null> {
+        const sf = await loadSpriteFrame(path);
+        if (!sf) {
+            return null;
+        }
+        const n = new Node(name);
+        parent.addChild(n);
+        n.setPosition(x, y, 0);
+        const ut = n.addComponent(UITransform);
+        const sp = n.addComponent(Sprite);
+        sp.spriteFrame = sf;
+        sp.sizeMode = Sprite.SizeMode.CUSTOM;
+        ut.setContentSize(w, h);
+        if (tint) {
+            sp.color = tint;
+        }
+        return n;
+    }
+
+    private makeCampfireOption(parent: Node, name: string, title: string, desc: string, x: number, y: number, enabled: boolean): Node {
+        const n = new Node(name);
+        parent.addChild(n);
+        n.setPosition(x, y, 0);
+        const ut = n.addComponent(UITransform);
+        ut.setContentSize(224, 156);
+        const g = n.addComponent(Graphics);
+        paintRoundRect(
+            g,
+            224,
+            156,
+            enabled ? new Color(43, 52, 62, 244) : new Color(44, 44, 48, 210),
+            enabled ? new Color(226, 189, 104, 255) : new Color(110, 116, 126, 225),
+            3,
+        );
+        this.addModalLabel(n, 'OptionTitle', 180, 34, 0, 38, 24, enabled ? new Color(255, 228, 150, 255) : new Color(164, 168, 174, 255), Label.HorizontalAlign.CENTER).string = title;
+        const lb = this.addModalLabel(n, 'OptionDesc', 176, 48, 0, -24, 16, enabled ? new Color(224, 232, 240, 255) : new Color(150, 154, 162, 255), Label.HorizontalAlign.CENTER);
+        lb.lineHeight = 22;
+        lb.string = desc;
+        return n;
+    }
+
+    private addShelfLabel(parent: Node, name: string, text: string, x: number, y: number): void {
+        this.addModalLabel(parent, name, 160, 28, x, y, 18, new Color(255, 224, 143, 255), Label.HorizontalAlign.CENTER).string = text;
+    }
+
+    private makeShopCardSlot(
+        parent: Node,
+        name: string,
+        x: number,
+        y: number,
+        title: string,
+        cost: number,
+        desc: string,
+        price: number,
+        onBuy: () => boolean,
+        enabled: boolean,
+    ): Node {
+        const slot = new Node(name);
+        parent.addChild(slot);
+        slot.setPosition(x, y, 0);
+        const ut = slot.addComponent(UITransform);
+        ut.setContentSize(132, 210);
+        const g = slot.addComponent(Graphics);
+        paintRoundRect(g, 132, 210, new Color(214, 190, 135, 255), new Color(99, 58, 42, 255), 3);
+        this.addModalLabel(slot, 'Cost', 28, 28, -46, 82, 17, new Color(64, 49, 34, 255), Label.HorizontalAlign.CENTER).string = `${cost}`;
+        this.addModalLabel(slot, 'Title', 104, 30, 8, 68, 18, new Color(45, 34, 25, 255), Label.HorizontalAlign.CENTER).string = title;
+        const descLb = this.addModalLabel(slot, 'Desc', 104, 74, 0, 2, 14, new Color(72, 57, 42, 255), Label.HorizontalAlign.CENTER);
+        descLb.lineHeight = 19;
+        descLb.string = desc;
+        this.addPriceButton(slot, 'Price', price, 0, -82, onBuy, enabled);
+        return slot;
+    }
+
+    private makeShopRelicSlot(
+        parent: Node,
+        name: string,
+        x: number,
+        y: number,
+        title: string,
+        desc: string,
+        price: number,
+        onBuy: () => boolean,
+        enabled: boolean,
+    ): Node {
+        const slot = new Node(name);
+        parent.addChild(slot);
+        slot.setPosition(x, y, 0);
+        const ut = slot.addComponent(UITransform);
+        ut.setContentSize(142, 188);
+        const g = slot.addComponent(Graphics);
+        paintRoundRect(g, 142, 188, new Color(33, 38, 48, 245), new Color(208, 168, 86, 255), 3);
+        this.addModalLabel(slot, 'Title', 124, 26, 0, -20, 17, new Color(255, 225, 147, 255), Label.HorizontalAlign.CENTER).string = title;
+        const descLb = this.addModalLabel(slot, 'Desc', 120, 44, 0, -54, 13, new Color(216, 226, 236, 255), Label.HorizontalAlign.CENTER);
+        descLb.lineHeight = 17;
+        descLb.string = desc;
+        this.addPriceButton(slot, 'Price', price, 0, -82, onBuy, enabled);
+        return slot;
+    }
+
+    private makeShopServiceSlot(parent: Node, name: string, x: number, y: number, price: number, onBuy: () => boolean, enabled: boolean): Node {
+        const slot = new Node(name);
+        parent.addChild(slot);
+        slot.setPosition(x, y, 0);
+        const ut = slot.addComponent(UITransform);
+        ut.setContentSize(164, 190);
+        const g = slot.addComponent(Graphics);
+        paintRoundRect(g, 164, 190, new Color(36, 42, 52, 245), new Color(199, 155, 80, 255), 3);
+        this.addModalLabel(slot, 'Scissor', 84, 42, 0, 42, 34, new Color(255, 225, 154, 255), Label.HorizontalAlign.CENTER).string = 'X';
+        this.addModalLabel(slot, 'Title', 138, 30, 0, 6, 18, new Color(255, 225, 147, 255), Label.HorizontalAlign.CENTER).string = '卡牌移除';
+        const descLb = this.addModalLabel(slot, 'Desc', 132, 36, 0, -32, 14, new Color(216, 226, 236, 255), Label.HorizontalAlign.CENTER);
+        descLb.lineHeight = 18;
+        descLb.string = '移除一张打击';
+        this.addPriceButton(slot, 'Price', price, 0, -78, onBuy, enabled);
+        return slot;
+    }
+
+    private addPriceButton(parent: Node, name: string, price: number, x: number, y: number, onBuy: () => boolean, enabled: boolean): void {
+        const sold = this.addModalLabel(parent, `${name}Sold`, 104, 34, x, y, 16, new Color(174, 180, 188, 255), Label.HorizontalAlign.CENTER).node;
+        sold.active = !enabled;
+        let btn: Node;
+        btn = this.makeModalButton(parent, name, enabled ? `${price} 金币` : '售罄', 104, 34, x, y, () => {
+            if (onBuy()) {
+                btn.active = false;
+                sold.active = true;
+            }
+        }, enabled);
+    }
+
+    private async drawShopBoardBackdrop(parent: Node): Promise<void> {
+        const bg = new Node('ShopBoardBackdrop');
+        parent.addChild(bg);
+        const ut = bg.addComponent(UITransform);
+        ut.setContentSize(1760, 900);
+
+        await this.addSpriteFromPath(bg, 'ShopRugFull', SHOP_RUG_FULL, 1760, 990, 28, -20, new Color(142, 196, 166, 255));
+    }
+
+    private async makeShopBoardCard(
+        parent: Node,
+        name: string,
+        title: string,
+        cost: number,
+        price: number,
+        x: number,
+        y: number,
+        artPath: string,
+        sale: boolean,
+        onBuy: () => boolean,
+        enabled: boolean,
+    ): Promise<void> {
+        const slot = new Node(name);
+        parent.addChild(slot);
+        slot.setPosition(x, y, 0);
+        const ut = slot.addComponent(UITransform);
+        ut.setContentSize(170, 286);
+        const frame = slot.addComponent(Graphics);
+        const isSkill = title.includes('生存') || title.includes('净化');
+        paintRoundRect(frame, 162, 236, isSkill ? new Color(72, 96, 111, 255) : new Color(126, 62, 49, 255), new Color(188, 126, 86, 255), 3);
+        frame.fillColor = isSkill ? new Color(102, 190, 210, 255) : new Color(185, 84, 57, 255);
+        frame.roundRect(-68, 80, 136, 30, 7);
+        frame.fill();
+        frame.fillColor = new Color(42, 40, 38, 238);
+        frame.roundRect(-62, -86, 124, 78, 5);
+        frame.fill();
+        await this.addSpriteFromPath(slot, 'CardImage', artPath, 126, 78, 0, 38, new Color(255, 255, 255, enabled ? 255 : 145));
+        const costOrb = new Node('CostOrb');
+        slot.addChild(costOrb);
+        costOrb.setPosition(-70, 104, 0);
+        const orbUt = costOrb.addComponent(UITransform);
+        orbUt.setContentSize(34, 34);
+        const orb = costOrb.addComponent(Graphics);
+        orb.fillColor = new Color(213, 71, 54, 255);
+        orb.circle(0, 0, 17);
+        orb.fill();
+        orb.strokeColor = new Color(255, 174, 78, 255);
+        orb.lineWidth = 2;
+        orb.circle(0, 0, 15);
+        orb.stroke();
+        this.addModalLabel(costOrb, 'CostText', 28, 28, 0, 0, 20, new Color(255, 238, 170, 255), Label.HorizontalAlign.CENTER).string = `${cost}`;
+        this.addModalLabel(slot, 'CardTitle', 116, 28, 10, 98, 19, new Color(255, 238, 210, 255), Label.HorizontalAlign.CENTER).string = title;
+        const desc = title.includes('生存')
+            ? '获得 8 点格挡。'
+            : title.includes('净化')
+                ? '保留，消耗。'
+                : '造成 8 点伤害。';
+        const descLb = this.addModalLabel(slot, 'CardDesc', 112, 62, 0, -52, 15, new Color(230, 225, 212, 255), Label.HorizontalAlign.CENTER);
+        descLb.lineHeight = 19;
+        descLb.string = desc;
+        if (sale) {
+            const tag = new Node('SaleTag');
+            slot.addChild(tag);
+            tag.setPosition(64, 112, 0);
+            tag.angle = -18;
+            const tagUt = tag.addComponent(UITransform);
+            tagUt.setContentSize(42, 32);
+            const tg = tag.addComponent(Graphics);
+            paintRoundRect(tg, 42, 32, new Color(211, 55, 45, 255), new Color(255, 205, 132, 255), 2);
+            this.addModalLabel(tag, 'Pct', 36, 28, 0, 0, 24, new Color(255, 230, 126, 255), Label.HorizontalAlign.CENTER).string = '%';
+        }
+        await this.addShopPriceButton(slot, 'BuyCard', price, 0, -138, onBuy, enabled);
+        slot.on(Node.EventType.MOUSE_ENTER, () => {
+            const lb = slot.getChildByName('CardNameTooltip') ?? this.addModalLabel(slot, 'CardNameTooltip', 170, 28, 0, 142, 18, new Color(255, 242, 190, 255), Label.HorizontalAlign.CENTER).node;
+            lb.getComponent(Label)!.string = `${title}  ${cost}费`;
+        }, this);
+    }
+
+    private async makeShopBoardIconItem(
+        parent: Node,
+        name: string,
+        title: string,
+        artPath: string,
+        price: number,
+        x: number,
+        y: number,
+        onBuy: () => boolean,
+        enabled: boolean,
+    ): Promise<void> {
+        const slot = new Node(name);
+        parent.addChild(slot);
+        slot.setPosition(x, y, 0);
+        const ut = slot.addComponent(UITransform);
+        ut.setContentSize(88, 116);
+        await this.addSpriteFromPath(slot, 'Icon', artPath, 58, 58, 0, 24, new Color(255, 255, 255, enabled ? 255 : 145));
+        await this.addShopPriceButton(slot, 'BuyIcon', price, 0, -42, onBuy, enabled);
+        slot.on(Node.EventType.MOUSE_ENTER, () => {
+            const lb = slot.getChildByName('IconNameTooltip') ?? this.addModalLabel(slot, 'IconNameTooltip', 130, 24, 0, 68, 14, new Color(255, 242, 190, 255), Label.HorizontalAlign.CENTER).node;
+            lb.getComponent(Label)!.string = title;
+        }, this);
+    }
+
+    private async makeShopBoardRemove(parent: Node, name: string, price: number, x: number, y: number, onBuy: () => boolean, enabled: boolean): Promise<void> {
+        const slot = new Node(name);
+        parent.addChild(slot);
+        slot.setPosition(x, y, 0);
+        const ut = slot.addComponent(UITransform);
+        ut.setContentSize(142, 142);
+        await this.addSpriteFromPath(slot, 'RemoveIcon', SHOP_REMOVE_ICON, 122, 122, 0, 18, new Color(255, 255, 255, enabled ? 255 : 145));
+        await this.addShopPriceButton(slot, 'BuyRemove', price, 0, -70, onBuy, enabled);
+    }
+
+    private async makeShopBackButton(parent: Node, onClick: () => void): Promise<void> {
+        const btn = new Node('ShopBackButton');
+        parent.addChild(btn);
+        btn.setPosition(-760, -326, 0);
+        const ut = btn.addComponent(UITransform);
+        ut.setContentSize(220, 98);
+        await this.addSpriteFromPath(btn, 'BackButtonArt', SHOP_BACK_BUTTON, 220, 98, 0, 0);
+        await this.addSpriteFromPath(btn, 'BackArrowArt', SHOP_BACK_ARROW, 82, 82, -36, 0);
+        btn.on(Node.EventType.TOUCH_END, onClick, this);
+    }
+
+    private async addShopPriceButton(parent: Node, name: string, price: number, x: number, y: number, onBuy: () => boolean, enabled: boolean): Promise<void> {
+        const soldLabel = this.addModalLabel(parent, `${name}Sold`, 80, 28, x, y, 17, new Color(190, 198, 206, 255), Label.HorizontalAlign.CENTER);
+        soldLabel.string = '售罄';
+        const sold = soldLabel.node;
+        sold.active = !enabled;
+        const btn = new Node(name);
+        parent.addChild(btn);
+        btn.setPosition(x, y, 0);
+        const ut = btn.addComponent(UITransform);
+        ut.setContentSize(86, 34);
+        await this.addSpriteFromPath(btn, 'GoldIcon', SHOP_GOLD_ICON, 27, 27, -23, 0, new Color(255, 255, 255, enabled ? 255 : 140));
+        const lb = this.addModalLabel(btn, 'Price', 58, 30, 14, 0, 19, enabled ? new Color(255, 226, 114, 255) : new Color(170, 176, 184, 255), Label.HorizontalAlign.LEFT);
+        lb.string = `${price}`;
+        btn.active = enabled;
+        if (enabled) {
+            btn.on(Node.EventType.TOUCH_END, () => {
+                if (onBuy()) {
+                    btn.active = false;
+                    sold.active = true;
+                }
+            }, this);
+        }
     }
 
     private createModal(name: string, title: string, subtitle: string): { root: Node; panel: Node } {
