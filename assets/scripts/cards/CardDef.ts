@@ -23,6 +23,13 @@ const DEFS: Record<CardId, CardDef> = {
         description: '造成 6 点伤害。',
         damage: 6,
     },
+    strike_plus: {
+        id: 'strike_plus',
+        name: '打击+',
+        cost: 1,
+        description: '造成 9 点伤害。',
+        damage: 9,
+    },
     defend: {
         id: 'defend',
         name: '防御',

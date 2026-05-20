@@ -27,6 +27,7 @@ import type { CardInstance } from './cards/CardInstance';
 import { createCardInstance } from './cards/CardInstance';
 import { CombatCardFlow } from './cards/CombatCardFlow';
 import { CombatEnergyPool } from './cards/CombatEnergyPool';
+import { getStarterDeckForCharacter } from './cards/StarterDeck';
 import type { EnemyId } from './enemies/EnemyDef';
 import { getEnemyDef } from './enemies/EnemyDef';
 import { createEnemyInstance, EnemyInstance } from './enemies/EnemyInstance';
@@ -58,12 +59,6 @@ const FALLBACK_CHARACTERS: CharacterPackage[] = [
     { id: 0, name: '静默猎手', hp: 70, maxHp: 70, gold: 99, relics: [], desc: '来自雾地的致命女猎手。' },
     { id: 1, name: '故障机器人', hp: 75, maxHp: 75, gold: 99, relics: [], desc: '产生了自我意识的自动机械。' },
     { id: 2, name: '铁甲卫士', hp: 80, maxHp: 80, gold: 99, relics: getStarterRelicsForCharacter(2), desc: '挥舞恶魔之剑的战士。' },
-];
-
-const STARTER_DECK_BY_CHAR: CardId[][] = [
-    ['strike', 'strike', 'strike', 'strike', 'defend', 'defend', 'defend', 'defend', 'survivor', 'bash'],
-    ['strike', 'strike', 'strike', 'strike', 'defend', 'defend', 'defend', 'defend', 'bash', 'bash'],
-    ['strike', 'strike', 'strike', 'strike', 'strike', 'defend', 'defend', 'defend', 'defend', 'bash'],
 ];
 
 const REWARD_GOLD: Record<Exclude<CombatEncounterKind, ''>, number> = {
@@ -174,7 +169,9 @@ export class BattlePlaceholderManager extends Component {
         this._enemies.push(...enemyIds.map((id) => createEnemyInstance(id)));
         this._selectedEnemyUid = this.firstAliveEnemy()?.uid ?? 0;
 
-        const deckIds = STARTER_DECK_BY_CHAR[gd.selectedCharId] ?? STARTER_DECK_BY_CHAR[0];
+        const deckIds = gd.deckIds.length > 0 ? gd.deckIds : getStarterDeckForCharacter(gd.selectedCharId);
+        gd.deckIds = [...deckIds];
+        gd.deckCount = deckIds.length;
         const deck = deckIds.map((id) => createCardInstance(id));
         this._flow.resetCombat(deck);
         this._energy.perTurn = 3;

@@ -1,4 +1,5 @@
 import type { RelicId } from './relics/RelicDef';
+import type { CardId } from './cards/CardDef';
 
 export interface CharacterPackage {
     id: number;
@@ -25,6 +26,7 @@ export class GlobalData {
     public selectedChar: CharacterPackage | null = null;
     public initialRewardChoiceIndex: number = -1;
     public deckCount: number = 17;
+    public deckIds: CardId[] = [];
     public runHudCenterText: string = '';
 
     /** 地图进入战斗前写入，战斗场景用它决定怪物组和奖励 */
@@ -37,6 +39,8 @@ export class GlobalData {
     public mapPathNodeIds: number[] = [0];
     /** 地图总层数（最顶层 floor + 1），HUD 用 */
     public mapFloorCount: number = 0;
+    /** 已结算过的非战斗节点，避免反复刷火堆/商店 */
+    public resolvedMapNodeIds: number[] = [];
 
     public resetMapProgress(): void {
         this.mapCurrentNodeId = 0;
@@ -44,7 +48,9 @@ export class GlobalData {
         this.mapFloorCount = 0;
         this.pendingEncounterKind = '';
         this.pendingEncounterNodeId = -1;
+        this.deckIds = [];
         this.deckCount = 17;
+        this.resolvedMapNodeIds = [];
         this.runHudCenterText = '';
     }
 
@@ -60,5 +66,15 @@ export class GlobalData {
 
     public setRunHudCenterText(text: string): void {
         this.runHudCenterText = text;
+    }
+
+    public isMapNodeResolved(nodeId: number): boolean {
+        return this.resolvedMapNodeIds.indexOf(nodeId) >= 0;
+    }
+
+    public markMapNodeResolved(nodeId: number): void {
+        if (!this.isMapNodeResolved(nodeId)) {
+            this.resolvedMapNodeIds.push(nodeId);
+        }
     }
 }

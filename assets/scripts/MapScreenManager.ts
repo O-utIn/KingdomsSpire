@@ -1,5 +1,6 @@
 import {
     _decorator,
+    BlockInputEvents,
     Camera,
     Canvas,
     Color,
@@ -21,6 +22,10 @@ import {
 import { SCENE_BATTLE, SCENE_EVENT } from './GameConfig';
 import { GlobalData } from './GlobalData';
 import { RunHudManager } from './RunHudManager';
+import type { CardId } from './cards/CardDef';
+import { getCardDef } from './cards/CardDef';
+import type { RelicId } from './relics/RelicDef';
+import { getRelicDef } from './relics/RelicDef';
 
 const { ccclass } = _decorator;
 
@@ -87,6 +92,12 @@ const MAX_FLOOR = Math.max(...MAP_GRAPH.map((n) => n.floor));
 const ZOOM_MIN = 0.45;
 const ZOOM_MAX = 2.4;
 const ZOOM_WHEEL_STEP = 0.09;
+const CAMPFIRE_REST_RATIO = 0.3;
+const SHOP_CARD_ID: CardId = 'bash';
+const SHOP_RELIC_ID: RelicId = 'neow_golden_rose';
+const SHOP_CARD_COST = 55;
+const SHOP_RELIC_COST = 80;
+const SHOP_REMOVE_COST = 40;
 const LEGEND_ROWS: { path: string; text: string }[] = [
     { path: ICON.event, text: '未知' },
     { path: ICON.shop, text: '商人' },
@@ -165,6 +176,19 @@ function paintSelectionRing(g: Graphics, radius: number, lineW: number, color: C
     g.stroke();
 }
 
+function paintRoundRect(g: Graphics, w: number, h: number, fill: Color, stroke?: Color, lineWidth = 2): void {
+    g.clear();
+    g.fillColor = fill;
+    g.roundRect(-w * 0.5, -h * 0.5, w, h, 8);
+    g.fill();
+    if (stroke) {
+        g.lineWidth = lineWidth;
+        g.strokeColor = stroke;
+        g.roundRect(-w * 0.5, -h * 0.5, w, h, 8);
+        g.stroke();
+    }
+}
+
 @ccclass('MapScreenManager')
 export class MapScreenManager extends Component {
     private _contentRoot: Node | null = null;
@@ -179,6 +203,7 @@ export class MapScreenManager extends Component {
     private _lineGraphics: Graphics | null = null;
     private _pathGraphics: Graphics | null = null;
     private _pingRoot: Node | null = null;
+    private _modalRoot: Node | null = null;
 
     async start() {
         this.syncCanvasCameraToScreen();
@@ -588,14 +613,261 @@ export class MapScreenManager extends Component {
                     console.error('[MapScreenManager] 进入战斗场景失败（请确认构建已包含 Battle）', err);
                 }
             });
-        } else if (next && next.kind === 'event') {
+            return;
+        }
+
+        if (next?.kind === 'event') {
             // 进入事件房间（兴趣点）
             director.loadScene(SCENE_EVENT, (err) => {
                 if (err) {
                     console.error('[MapScreenManager] 进入事件场景失败（请确认构建已包含 Event）', err);
                 }
             });
+            return;
         }
+
+        if (next?.kind === 'rest') {
+            this.showCampfire(nodeId);
+            return;
+        }
+        if (next?.kind === 'shop') {
+            this.showShop(nodeId);
+        }
+    }
+
+    private showCampfire(nodeId: number): void {
+        const modal = this.createModal('CampfirePanel', '火堆', '在篝火旁整理状态，只能选择一项主要行动。');
+        const panel = modal.panel;
+        const gd = GlobalData.instance;
+        const ch = gd.selectedChar;
+        const resolved = gd.isMapNodeResolved(nodeId);
+        const status = this.addModalLabel(panel, 'Status', 620, 58, 0, 92, 20, new Color(220, 228, 238, 255), Label.HorizontalAlign.CENTER);
+        status.string = resolved
+            ? '这处火堆已经使用过。'
+            : ch
+                ? `当前生命 ${ch.hp}/${ch.maxHp}，牌组 ${gd.deckIds.length || gd.deckCount} 张。`
+                : '当前没有角色数据。';
+
+        let smithBtn: Node;
+        const restBtn = this.makeModalButton(panel, 'RestButton', '休息', 210, 74, -230, -8, () => {
+            const hero = gd.selectedChar;
+            if (!hero || gd.isMapNodeResolved(nodeId)) {
+                return;
+            }
+            const before = hero.hp;
+            const amount = Math.max(1, Math.ceil(hero.maxHp * CAMPFIRE_REST_RATIO));
+            hero.hp = Math.min(hero.maxHp, hero.hp + amount);
+            gd.markMapNodeResolved(nodeId);
+            status.string = hero.hp > before
+                ? `休息完成，回复 ${hero.hp - before} 点生命。`
+                : '休息完成，生命已经是满值。';
+            restBtn.active = false;
+            smithBtn.active = false;
+            RunHudManager.startRun();
+        }, !resolved && !!ch);
+        this.addModalLabel(restBtn, 'Desc', 180, 28, 0, -18, 15, new Color(222, 232, 242, 255), Label.HorizontalAlign.CENTER).string = '回复 30% 最大生命';
+
+        const smithEnabled = !resolved && gd.deckIds.includes('strike');
+        smithBtn = this.makeModalButton(panel, 'SmithButton', '锻造', 210, 74, 0, -8, () => {
+            if (gd.isMapNodeResolved(nodeId)) {
+                return;
+            }
+            const idx = gd.deckIds.indexOf('strike');
+            if (idx < 0) {
+                status.string = '牌组里已经没有可升级的打击。';
+                return;
+            }
+            gd.deckIds[idx] = 'strike_plus';
+            gd.deckCount = gd.deckIds.length;
+            gd.markMapNodeResolved(nodeId);
+            status.string = '锻造完成，将一张「打击」升级为「打击+」。';
+            restBtn.active = false;
+            smithBtn.active = false;
+            RunHudManager.startRun();
+        }, smithEnabled);
+        this.addModalLabel(smithBtn, 'Desc', 180, 28, 0, -18, 15, new Color(222, 232, 242, 255), Label.HorizontalAlign.CENTER).string = '打击 6 → 打击+ 9';
+
+        this.makeModalButton(panel, 'LeaveButton', '离开', 160, 56, 230, -8, () => this.closeModal(), true);
+        RunHudManager.setCenterText('火堆  |  休息 / 锻造 / 离开');
+    }
+
+    private showShop(nodeId: number): void {
+        const modal = this.createModal('ShopPanel', '商店', '展示三种商品类型：卡牌、遗物、服务。每类各一项。');
+        const panel = modal.panel;
+        const gd = GlobalData.instance;
+        const ch = gd.selectedChar;
+        const resolved = gd.isMapNodeResolved(nodeId);
+        const status = this.addModalLabel(panel, 'Status', 660, 42, 0, 106, 18, new Color(220, 228, 238, 255), Label.HorizontalAlign.CENTER);
+        status.string = resolved ? '这间商店已经离开，货架不再结算。' : `金币 ${ch?.gold ?? 0}`;
+
+        const card = getCardDef(SHOP_CARD_ID);
+        const relic = getRelicDef(SHOP_RELIC_ID);
+
+        this.buildShopProduct(panel, 'CardProduct', '卡牌', card?.name ?? SHOP_CARD_ID, card?.description ?? '获得一张卡牌。', SHOP_CARD_COST, -260, () => {
+            const hero = gd.selectedChar;
+            if (!hero || hero.gold < SHOP_CARD_COST || resolved) {
+                status.string = '金币不足，无法购买卡牌。';
+                return false;
+            }
+            hero.gold -= SHOP_CARD_COST;
+            gd.deckIds.push(SHOP_CARD_ID);
+            gd.deckCount = gd.deckIds.length;
+            status.string = `购买卡牌「${card?.name ?? SHOP_CARD_ID}」，牌组 +1。`;
+            RunHudManager.startRun();
+            return true;
+        }, !resolved);
+
+        this.buildShopProduct(panel, 'RelicProduct', '遗物', relic?.name ?? SHOP_RELIC_ID, relic?.description ?? '获得一个遗物。', SHOP_RELIC_COST, 0, () => {
+            const hero = gd.selectedChar;
+            if (!hero || hero.gold < SHOP_RELIC_COST || resolved) {
+                status.string = '金币不足，无法购买遗物。';
+                return false;
+            }
+            if (hero.relics.includes(SHOP_RELIC_ID)) {
+                status.string = '你已经拥有这件遗物。';
+                return false;
+            }
+            hero.gold -= SHOP_RELIC_COST;
+            hero.relics.push(SHOP_RELIC_ID);
+            status.string = `购买遗物「${relic?.name ?? SHOP_RELIC_ID}」。`;
+            RunHudManager.startRun();
+            return true;
+        }, !resolved && !(ch?.relics.includes(SHOP_RELIC_ID)));
+
+        this.buildShopProduct(panel, 'ServiceProduct', '服务', '卡牌移除', '移除牌组中的一张「打击」。', SHOP_REMOVE_COST, 260, () => {
+            const hero = gd.selectedChar;
+            if (!hero || hero.gold < SHOP_REMOVE_COST || resolved) {
+                status.string = '金币不足，无法购买服务。';
+                return false;
+            }
+            const idx = gd.deckIds.indexOf('strike');
+            if (idx < 0) {
+                status.string = '牌组里没有可移除的打击。';
+                return false;
+            }
+            hero.gold -= SHOP_REMOVE_COST;
+            gd.deckIds.splice(idx, 1);
+            gd.deckCount = gd.deckIds.length;
+            status.string = '购买服务，移除一张「打击」。';
+            RunHudManager.startRun();
+            return true;
+        }, !resolved && gd.deckIds.includes('strike'));
+
+        this.makeModalButton(panel, 'LeaveShop', '离开商店', 180, 56, 0, -188, () => {
+            gd.markMapNodeResolved(nodeId);
+            this.closeModal();
+            this.refreshRunHud();
+        }, true);
+        RunHudManager.setCenterText('商店  |  卡牌 / 遗物 / 服务');
+    }
+
+    private buildShopProduct(
+        parent: Node,
+        name: string,
+        type: string,
+        title: string,
+        desc: string,
+        cost: number,
+        x: number,
+        onBuy: () => boolean,
+        enabled: boolean,
+    ): void {
+        const card = new Node(name);
+        parent.addChild(card);
+        card.setPosition(x, -30, 0);
+        const ut = card.addComponent(UITransform);
+        ut.setContentSize(230, 260);
+        const g = card.addComponent(Graphics);
+        paintRoundRect(g, 230, 260, new Color(26, 31, 42, 238), new Color(120, 94, 54, 255), 2);
+
+        this.addModalLabel(card, 'Type', 190, 24, 0, 92, 16, new Color(168, 196, 228, 255), Label.HorizontalAlign.CENTER).string = type;
+        this.addModalLabel(card, 'Title', 190, 34, 0, 56, 23, new Color(255, 218, 128, 255), Label.HorizontalAlign.CENTER).string = title;
+        const descLb = this.addModalLabel(card, 'Desc', 184, 78, 0, 0, 16, new Color(220, 228, 238, 255), Label.HorizontalAlign.CENTER);
+        descLb.lineHeight = 22;
+        descLb.string = desc;
+        this.addModalLabel(card, 'Cost', 170, 28, 0, -66, 18, new Color(255, 236, 165, 255), Label.HorizontalAlign.CENTER).string = `${cost} 金币`;
+        const buy = this.makeModalButton(card, 'Buy', enabled ? '购买' : '不可购买', 150, 44, 0, -108, () => {
+            if (onBuy()) {
+                buy.active = false;
+                sold.active = true;
+            }
+        }, enabled);
+        const sold = this.addModalLabel(card, 'Sold', 150, 44, 0, -108, 18, new Color(170, 178, 190, 255), Label.HorizontalAlign.CENTER).node;
+        sold.active = !enabled;
+    }
+
+    private createModal(name: string, title: string, subtitle: string): { root: Node; panel: Node } {
+        this.closeModal();
+        const vs = view.getVisibleSize();
+        const root = new Node(`${name}Overlay`);
+        this.node.addChild(root);
+        root.setSiblingIndex(this.node.children.length - 1);
+        const rUt = root.addComponent(UITransform);
+        rUt.setContentSize(vs.width, vs.height);
+        root.addComponent(BlockInputEvents);
+        const shade = root.addComponent(Graphics);
+        shade.fillColor = new Color(0, 0, 0, 150);
+        shade.rect(-vs.width * 0.5, -vs.height * 0.5, vs.width, vs.height);
+        shade.fill();
+        root.on(Node.EventType.TOUCH_START, () => {}, this);
+
+        const panel = new Node(name);
+        root.addChild(panel);
+        const pUt = panel.addComponent(UITransform);
+        pUt.setContentSize(840, 520);
+        const pg = panel.addComponent(Graphics);
+        paintRoundRect(pg, 840, 520, new Color(20, 25, 36, 248), new Color(214, 176, 96, 255), 3);
+
+        this.addModalLabel(panel, 'Title', 760, 44, 0, 214, 34, new Color(255, 220, 128, 255), Label.HorizontalAlign.CENTER).string = title;
+        this.addModalLabel(panel, 'Subtitle', 760, 32, 0, 174, 18, new Color(210, 220, 232, 255), Label.HorizontalAlign.CENTER).string = subtitle;
+        this._modalRoot = root;
+        return { root, panel };
+    }
+
+    private closeModal(): void {
+        if (this._modalRoot?.isValid) {
+            this._modalRoot.destroy();
+        }
+        this._modalRoot = null;
+    }
+
+    private makeModalButton(parent: Node, name: string, text: string, w: number, h: number, x: number, y: number, onClick: () => void, enabled: boolean): Node {
+        const btn = new Node(name);
+        parent.addChild(btn);
+        btn.setPosition(x, y, 0);
+        const ut = btn.addComponent(UITransform);
+        ut.setContentSize(w, h);
+        const g = btn.addComponent(Graphics);
+        paintRoundRect(
+            g,
+            w,
+            h,
+            enabled ? new Color(78, 108, 138, 255) : new Color(68, 72, 82, 220),
+            enabled ? new Color(170, 215, 255, 255) : new Color(118, 124, 136, 220),
+        );
+        const lb = this.addModalLabel(btn, 'Label', w - 20, h - 10, 0, 0, 20, enabled ? new Color(245, 250, 255, 255) : new Color(165, 172, 184, 255), Label.HorizontalAlign.CENTER);
+        lb.string = text;
+        if (enabled) {
+            btn.on(Node.EventType.TOUCH_END, onClick, this);
+        }
+        return btn;
+    }
+
+    private addModalLabel(parent: Node, name: string, w: number, h: number, x: number, y: number, fontSize: number, color: Color, align: number): Label {
+        const n = new Node(name);
+        parent.addChild(n);
+        n.setPosition(x, y, 0);
+        const ut = n.addComponent(UITransform);
+        ut.setContentSize(w, h);
+        const lb = n.addComponent(Label);
+        lb.fontSize = fontSize;
+        lb.lineHeight = Math.ceil(fontSize * 1.25);
+        lb.color = color;
+        lb.horizontalAlign = align;
+        lb.verticalAlign = Label.VerticalAlign.CENTER;
+        lb.enableWrapText = true;
+        lb.overflow = Label.Overflow.CLAMP;
+        return lb;
     }
 
     private refreshPingAndInteract(): void {

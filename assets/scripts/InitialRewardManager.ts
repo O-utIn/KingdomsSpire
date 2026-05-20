@@ -19,6 +19,7 @@ import { MapScreenManager } from './MapScreenManager';
 import { getRelicDef, getStarterRelicsForCharacter, NEOW_STARTER_RELIC_IDS } from './relics/RelicDef';
 import type { RelicDef, RelicId } from './relics/RelicDef';
 import { RunHudManager } from './RunHudManager';
+import { getStarterDeckForCharacter } from './cards/StarterDeck';
 const { ccclass, property } = _decorator;
 
 type CharRow = Pick<CharacterPackage, 'id' | 'name' | 'hp' | 'maxHp' | 'gold' | 'desc'>;
@@ -68,6 +69,8 @@ export class InitialRewardManager extends Component {
             relics: getStarterRelicsForCharacter(row.id),
             desc: row.desc,
         };
+        gd.deckIds = getStarterDeckForCharacter(row.id);
+        gd.deckCount = gd.deckIds.length;
 
         RunHudManager.setCenterText('选择初始遗物');
     }
@@ -302,6 +305,8 @@ export class InitialRewardManager extends Component {
             relics: appendRelic(starterRelics, chosenRelic),
             desc: row.desc,
         };
+        gd.deckIds = getStarterDeckForCharacter(row.id);
+        gd.deckCount = gd.deckIds.length;
         RunHudManager.setCenterText('选择初始遗物');
         console.log('选了第几个:', index);
         this.goNext();
