@@ -21,8 +21,8 @@ import type { CharacterPackage, CombatEncounterKind } from './GlobalData';
 import { getRelicDefs, getStarterRelicsForCharacter } from './relics/RelicDef';
 import type { RelicDef } from './relics/RelicDef';
 import { RunHudManager } from './RunHudManager';
-import type { CardDef, CardId } from './cards/CardDef';
-import { getCardDef } from './cards/CardDef';
+import type { CardDef, CardId, ShadowId } from './cards/CardDef';
+import { getCardDef, isDescentCard } from './cards/CardDef';
 import type { CardInstance } from './cards/CardInstance';
 import { createCardInstance } from './cards/CardInstance';
 import { CombatCardFlow } from './cards/CombatCardFlow';
@@ -35,6 +35,17 @@ import { createEnemyInstance, EnemyInstance } from './enemies/EnemyInstance';
 const { ccclass } = _decorator;
 
 type BattleState = 'player' | 'enemy' | 'victory' | 'defeat';
+
+const RANDOM_DESCENT_IDS: CardId[] = ['descent_wusheng', 'descent_wolong', 'descent_wushuang'];
+
+const SHADOW_NAME: Record<ShadowId, string> = {
+    spirit: '虚影',
+    wusheng: '武圣',
+    wolong: '卧龙',
+    wushuang: '无双',
+};
+
+const CARD_DESCRIPTION_LINE_COLUMNS = 8;
 
 interface EnemyView {
     enemy: EnemyInstance;
@@ -56,8 +67,8 @@ const PLAYER_ART_BY_CHAR = [
 ] as const;
 
 const FALLBACK_CHARACTERS: CharacterPackage[] = [
-    { id: 0, name: '静默猎手', hp: 70, maxHp: 70, gold: 99, relics: [], desc: '来自雾地的致命女猎手。' },
-    { id: 1, name: '故障机器人', hp: 75, maxHp: 75, gold: 99, relics: [], desc: '产生了自我意识的自动机械。' },
+    { id: 0, name: '静默猎手', hp: 70, maxHp: 70, gold: 99, relics: getStarterRelicsForCharacter(0), desc: '来自雾地的致命女猎手。' },
+    { id: 1, name: '故障机器人', hp: 75, maxHp: 75, gold: 99, relics: getStarterRelicsForCharacter(1), desc: '产生了自我意识的自动机械。' },
     { id: 2, name: '铁甲卫士', hp: 80, maxHp: 80, gold: 99, relics: getStarterRelicsForCharacter(2), desc: '挥舞恶魔之剑的战士。' },
 ];
 
@@ -119,6 +130,11 @@ export class BattlePlaceholderManager extends Component {
     private _settlementShown = false;
     private _encounterKind: CombatEncounterKind = 'monster';
     private _firstHpLossImmuneReady = false;
+    private _activeShadow: ShadowId | null = null;
+    private _playerStrength = 0;
+    private _nextTurnEnergyCapBonus = 0;
+    private _firstDescentCoverUsedThisTurn = false;
+    private _hasTacticalTerrain = false;
 
     private _playerHpLabel: Label | null = null;
     private _playerBlockLabel: Label | null = null;
@@ -176,6 +192,11 @@ export class BattlePlaceholderManager extends Component {
         this._flow.resetCombat(deck);
         this._energy.perTurn = 3;
         this._firstHpLossImmuneReady = this.relicDefs().some((relic) => !!relic.effects.firstHpLossImmune);
+        this._activeShadow = null;
+        this._playerStrength = 0;
+        this._nextTurnEnergyCapBonus = 0;
+        this._firstDescentCoverUsedThisTurn = false;
+        this._hasTacticalTerrain = false;
         this._logLines.length = 0;
         this.pushLog(`进入${encounterTitle(this._encounterKind)}。`);
     }
@@ -498,6 +519,13 @@ export class BattlePlaceholderManager extends Component {
         this._state = 'player';
         this._turn += 1;
         this._playerBlock = 0;
+        this._firstDescentCoverUsedThisTurn = false;
+        this._flow.resetTemporaryCosts();
+        this._energy.perTurn = 3 + this._nextTurnEnergyCapBonus;
+        if (this._nextTurnEnergyCapBonus > 0) {
+            this.pushLog(`无双离场生效，本回合能量上限 +${this._nextTurnEnergyCapBonus}。`);
+            this._nextTurnEnergyCapBonus = 0;
+        }
         this._energy.startTurn();
         this._flow.draw(5);
         this.pushLog(isFirstTurn ? '你的回合开始，抽 5 张牌。' : `第 ${this._turn} 回合开始，抽 5 张牌。`);
@@ -571,20 +599,25 @@ export class BattlePlaceholderManager extends Component {
         }
 
         const target = this.resolveCardTarget(def);
-        if ((def.damage ?? 0) > 0 && !target) {
+        const damageTargets = this.resolveDamageTargets(def, target);
+        if (this.effectiveDamage(def) > 0 && damageTargets.length === 0) {
             this.pushLog('没有可攻击的敌人。');
             this.refreshAll();
             return;
         }
-        if (!this._energy.spend(def.cost)) {
+        const cost = this.cardCost(card, def);
+        if (!this._energy.spend(cost)) {
             this.pushLog(`能量不足，无法打出「${def.name}」。`);
             this.refreshAll();
             return;
         }
 
         this._flow.playFromHand(handIndex);
-        this.applyCardEffect(card, def, target);
+        this.applyCardEffect(card, def, target, damageTargets);
 
+        if (this.isDefeated()) {
+            return;
+        }
         if (this._enemies.every((enemy) => enemy.isDead)) {
             this.finishVictory();
             return;
@@ -598,27 +631,222 @@ export class BattlePlaceholderManager extends Component {
     }
 
     private resolveCardTarget(def: CardDef): EnemyInstance | null {
-        if ((def.damage ?? 0) <= 0) {
+        if (this.effectiveDamage(def) <= 0) {
             return null;
         }
         return this.selectedEnemy() ?? this.firstAliveEnemy();
     }
 
-    private applyCardEffect(_card: CardInstance, def: CardDef, target: EnemyInstance | null): void {
+    private applyCardEffect(_card: CardInstance, def: CardDef, target: EnemyInstance | null, damageTargets: EnemyInstance[]): void {
         const parts: string[] = [];
-        if (def.damage && target) {
-            const hpLoss = target.takeDamage(def.damage);
-            const targetName = getEnemyDef(target.defId)?.name ?? target.defId;
-            parts.push(`对 ${targetName} 造成 ${hpLoss}/${def.damage} 点生命伤害`);
-            if (target.isDead) {
-                parts.push(`${targetName} 被击倒`);
+        const wolongWasActive = this._activeShadow === 'wolong';
+        let shouldFinishDefeat = false;
+
+        if (def.forcesShadowLeave) {
+            if (this._activeShadow) {
+                this.leaveShadow(true, '过河拆桥');
+                parts.push('强制虚影离场');
+            } else {
+                parts.push('当前没有虚影');
             }
         }
-        if (def.block) {
-            this._playerBlock += def.block;
-            parts.push(`获得 ${def.block} 点格挡`);
+
+        const damage = this.effectiveDamage(def);
+        if (damage > 0) {
+            for (const enemy of damageTargets) {
+                const hpLoss = enemy.takeDamage(damage);
+                const targetName = getEnemyDef(enemy.defId)?.name ?? enemy.defId;
+                parts.push(`对 ${targetName} 造成 ${hpLoss}/${damage} 点生命伤害`);
+                if (enemy.isDead) {
+                    parts.push(`${targetName} 被击倒`);
+                }
+            }
+        }
+
+        const block = this.effectiveBlock(def);
+        if (block > 0) {
+            this._playerBlock += block;
+            parts.push(`获得 ${block} 点格挡`);
+        }
+
+        const drawCount = this.effectiveDraw(def);
+        if (drawCount > 0) {
+            const drawn = this._flow.draw(drawCount).length;
+            parts.push(`抽 ${drawn} 张牌`);
+        }
+
+        if (def.hpLoss) {
+            const hpLoss = this.losePlayerHp(def.hpLoss);
+            parts.push(`失去 ${hpLoss} 点生命`);
+            shouldFinishDefeat = this.ensureSelectedCharacter().hp <= 0;
+        }
+
+        if (shouldFinishDefeat) {
+            this.pushLog(`打出「${def.name}」：${parts.join('，')}。`);
+            this.finishDefeat();
+            return;
+        }
+
+        if (def.createsRandomDescent) {
+            const created = this.createRandomDescentCard();
+            parts.push(`生成「${getCardDef(created.defId)?.name ?? created.defId}」`);
+        }
+
+        if (def.grantsPower === 'tactical_terrain') {
+            this._hasTacticalTerrain = true;
+            parts.push('兵要地势常驻');
+        }
+
+        if (def.descentShadow) {
+            this.coverShadow(def.descentShadow);
+            parts.push(`覆盖为【${SHADOW_NAME[def.descentShadow]}】`);
+        }
+
+        if (wolongWasActive && def.type === 'skill') {
+            const reduced = this.reduceDescentCostsInHand();
+            if (reduced > 0) {
+                parts.push(`卧龙使 ${reduced} 张【降临】费用 -1`);
+            }
+        }
+
+        if (parts.length === 0) {
+            parts.push('没有直接效果');
         }
         this.pushLog(`打出「${def.name}」：${parts.join('，')}。`);
+    }
+
+    private cardCost(card: CardInstance, def: CardDef): number {
+        return Math.max(0, card.temporaryCost ?? def.cost);
+    }
+
+    private effectiveDamage(def: CardDef): number {
+        if (!def.forcesShadowLeave && this._activeShadow === 'wushuang' && (def.block ?? 0) > 0) {
+            return def.block! + 5 + this._playerStrength;
+        }
+        const base = def.damage ?? 0;
+        if (base <= 0) {
+            return 0;
+        }
+        const shadowBonus = this._activeShadow === 'wusheng' && def.type === 'attack' ? 2 : 0;
+        return base + shadowBonus + this._playerStrength;
+    }
+
+    private effectiveBlock(def: CardDef): number {
+        if (!def.forcesShadowLeave && this._activeShadow === 'wushuang') {
+            return 0;
+        }
+        return def.block ?? 0;
+    }
+
+    private effectiveDraw(def: CardDef): number {
+        if (this._activeShadow && def.drawIfShadow !== undefined) {
+            return def.drawIfShadow;
+        }
+        return def.draw ?? 0;
+    }
+
+    private resolveDamageTargets(def: CardDef, target: EnemyInstance | null): EnemyInstance[] {
+        if (this.effectiveDamage(def) <= 0) {
+            return [];
+        }
+        if (def.damageAllEnemies || (this._activeShadow === 'wusheng' && def.type === 'attack')) {
+            return this._enemies.filter((enemy) => !enemy.isDead);
+        }
+        return target ? [target] : [];
+    }
+
+    private coverShadow(next: ShadowId): void {
+        const previous = this._activeShadow;
+        if (previous) {
+            this.leaveShadow(true, '降临覆盖');
+        }
+        this._activeShadow = next;
+        if (!this._firstDescentCoverUsedThisTurn) {
+            this._firstDescentCoverUsedThisTurn = true;
+            const energy = this.firstDescentCoverEnergyBonus();
+            const draw = this.firstDescentCoverDrawBonus();
+            if (energy > 0 || draw > 0) {
+                this._energy.add(energy);
+                const drawn = this._flow.draw(draw).length;
+                this.pushLog(`引魂灯生效，获得 ${energy} 能量并抽 ${drawn} 张牌。`);
+            }
+        }
+        if (previous) {
+            this.pushLog(`【${SHADOW_NAME[previous]}】离场，【${SHADOW_NAME[next]}】降临。`);
+        }
+    }
+
+    private leaveShadow(isReplacement: boolean, source: string): void {
+        const leaving = this._activeShadow;
+        if (!leaving) {
+            return;
+        }
+        this._activeShadow = null;
+        this.applyShadowLeaveEffect(leaving);
+        if (isReplacement) {
+            this.triggerTacticalTerrain(source);
+        }
+    }
+
+    private applyShadowLeaveEffect(shadow: ShadowId): void {
+        if (shadow === 'wusheng') {
+            this._playerStrength += 1;
+            this.pushLog('武圣离场：获得 1 层力量。');
+        } else if (shadow === 'wolong') {
+            this._playerBlock += 5;
+            this.pushLog('卧龙离场：获得 5 点格挡。');
+        } else if (shadow === 'wushuang') {
+            this._nextTurnEnergyCapBonus += 2;
+            this.pushLog('无双离场：下回合能量上限 +2。');
+        }
+    }
+
+    private triggerTacticalTerrain(source: string): void {
+        if (!this._hasTacticalTerrain) {
+            return;
+        }
+        if (this._flow.hand.length === 0) {
+            this.pushLog(`兵要地势因${source}触发，但没有手牌可弃。`);
+            return;
+        }
+        const discarded = this._flow.hand[0];
+        const discardedName = getCardDef(discarded.defId)?.name ?? discarded.defId;
+        this._flow.discardFromHand(0);
+        this._energy.add(1);
+        const drawn = this._flow.draw(1).length;
+        this.pushLog(`兵要地势触发，弃掉「${discardedName}」，获得 1 能量并抽 ${drawn} 张牌。`);
+    }
+
+    private reduceDescentCostsInHand(): number {
+        let changed = 0;
+        for (const card of this._flow.hand) {
+            const def = getCardDef(card.defId);
+            if (!def || !isDescentCard(def)) {
+                continue;
+            }
+            const current = this.cardCost(card, def);
+            const next = Math.max(0, current - 1);
+            if (next !== current) {
+                card.temporaryCost = next;
+                changed += 1;
+            }
+        }
+        return changed;
+    }
+
+    private createRandomDescentCard(): CardInstance {
+        const id = RANDOM_DESCENT_IDS[Math.floor(Math.random() * RANDOM_DESCENT_IDS.length)] ?? RANDOM_DESCENT_IDS[0];
+        const card = createCardInstance(id);
+        card.temporaryCost = 0;
+        this._flow.addToHand(card);
+        return card;
+    }
+
+    private losePlayerHp(amount: number): number {
+        const ch = this.ensureSelectedCharacter();
+        const hpLoss = Math.min(ch.hp, Math.max(0, amount));
+        ch.hp -= hpLoss;
+        return hpLoss;
     }
 
     private damagePlayer(amount: number): number {
@@ -743,6 +971,10 @@ export class BattlePlaceholderManager extends Component {
         return enemy && !enemy.isDead ? enemy : null;
     }
 
+    private isDefeated(): boolean {
+        return this._state === 'defeat';
+    }
+
     private pushLog(line: string): void {
         this._logLines.unshift(line);
         if (this._logLines.length > 6) {
@@ -756,6 +988,14 @@ export class BattlePlaceholderManager extends Component {
 
     private startCombatEnergyBonus(): number {
         return this.relicDefs().reduce((sum, relic) => sum + (relic.effects.startCombatEnergy ?? 0), 0);
+    }
+
+    private firstDescentCoverEnergyBonus(): number {
+        return this.relicDefs().reduce((sum, relic) => sum + (relic.effects.firstDescentCoverEnergy ?? 0), 0);
+    }
+
+    private firstDescentCoverDrawBonus(): number {
+        return this.relicDefs().reduce((sum, relic) => sum + (relic.effects.firstDescentCoverDraw ?? 0), 0);
     }
 
     private goldRewardHealAmount(): number {
@@ -807,10 +1047,11 @@ export class BattlePlaceholderManager extends Component {
             this._playerHpLabel.string = `生命 ${ch.hp}/${ch.maxHp}`;
         }
         if (this._playerBlockLabel) {
-            this._playerBlockLabel.string = `格挡 ${this._playerBlock}`;
+            this._playerBlockLabel.string = `格挡 ${this._playerBlock}  力量 ${this._playerStrength}`;
         }
         if (this._energyLabel) {
-            this._energyLabel.string = `能量 ${this._energy.current}/${this._energy.perTurn}`;
+            const shadow = this._activeShadow ? SHADOW_NAME[this._activeShadow] : '无';
+            this._energyLabel.string = `能量 ${this._energy.current}/${this._energy.perTurn}  虚影 ${shadow}`;
         }
     }
 
@@ -869,7 +1110,8 @@ export class BattlePlaceholderManager extends Component {
             if (!def) {
                 return;
             }
-            const canPlay = this._state === 'player' && this._energy.current >= def.cost;
+            const cost = this.cardCost(card, def);
+            const canPlay = this._state === 'player' && this._energy.current >= cost;
             const n = new Node(`Card_${card.uid}`);
             root.addChild(n);
             n.setPosition(startX + index * (cardW + gap), 0, 0);
@@ -880,17 +1122,16 @@ export class BattlePlaceholderManager extends Component {
             const stroke = canPlay ? new Color(86, 60, 40, 255) : new Color(82, 78, 74, 255);
             paintRoundRect(g, cardW, cardH, fill, stroke);
 
-            this.addLabel(n, 'Cost', 36, 32, -cardW * 0.5 + 28, cardH * 0.5 - 26, 22, new Color(32, 42, 54, 255)).string = `${def.cost}`;
+            this.addLabel(n, 'Cost', 36, 32, -cardW * 0.5 + 28, cardH * 0.5 - 26, 22, new Color(32, 42, 54, 255)).string = `${cost}`;
             const nameLb = this.addLabel(n, 'Name', cardW - 54, 32, 18, cardH * 0.5 - 28, 20, new Color(42, 33, 24, 255));
             nameLb.string = def.name;
             nameLb.isBold = true;
 
             const typeLb = this.addLabel(n, 'Type', cardW - 28, 28, 0, 30, 16, new Color(78, 62, 46, 255));
+            typeLb.overflow = Label.Overflow.SHRINK;
             typeLb.string = this.cardTypeLabel(def);
 
-            const desc = this.addLabel(n, 'Desc', cardW - 28, 88, 0, -38, 17, new Color(42, 34, 25, 255));
-            desc.lineHeight = 24;
-            desc.string = def.description;
+            this.renderCardDescription(n, def, cardW);
 
             if (def.exhaustsOnPlay) {
                 this.addLabel(n, 'Exhaust', cardW - 28, 24, 0, -cardH * 0.5 + 24, 14, new Color(120, 52, 42, 255)).string = '消耗';
@@ -901,13 +1142,99 @@ export class BattlePlaceholderManager extends Component {
 
     private cardTypeLabel(def: CardDef): string {
         const parts: string[] = [];
-        if (def.damage) {
-            parts.push(`伤害 ${def.damage}`);
+        const damage = this.effectiveDamage(def);
+        const block = this.effectiveBlock(def);
+        if (damage) {
+            parts.push(`${this.isMultiTargetAttack(def) ? '群伤' : '伤害'} ${damage}`);
         }
-        if (def.block) {
-            parts.push(`格挡 ${def.block}`);
+        if (block) {
+            parts.push(`格挡 ${block}`);
         }
-        return parts.join(' / ') || '技能';
+        if (def.draw || def.drawIfShadow) {
+            parts.push(`抽牌 ${this.effectiveDraw(def)}`);
+        }
+        if (def.type === 'power') {
+            parts.push('能力');
+        }
+        return parts.join(' / ') || (def.type === 'attack' ? '攻击' : '技能');
+    }
+
+    private cardFaceDescription(def: CardDef): string {
+        const text = def.description
+            .replace(/：/g, '：\n')
+            .replace(/。/g, '。\n')
+            .replace(/\n+/g, '\n')
+            .trim();
+        return this.wrapCardDescription(text);
+    }
+
+    private wrapCardDescription(text: string): string {
+        const lines: string[] = [];
+        for (const paragraph of text.split('\n')) {
+            let current = '';
+            let width = 0;
+            for (const char of paragraph) {
+                const charWidth = this.cardDescriptionCharWidth(char);
+                const shouldBreakBefore = current.length > 0 && width + charWidth > CARD_DESCRIPTION_LINE_COLUMNS;
+                if (shouldBreakBefore) {
+                    lines.push(current.trim());
+                    current = '';
+                    width = 0;
+                }
+                current += char;
+                width += charWidth;
+                if (/[，。；]/.test(char)) {
+                    lines.push(current.trim());
+                    current = '';
+                    width = 0;
+                }
+            }
+            if (current.trim()) {
+                lines.push(current.trim());
+            }
+        }
+        return lines.join('\n');
+    }
+
+    private cardDescriptionCharWidth(char: string): number {
+        return /[ -~]/.test(char) ? 0.55 : 1;
+    }
+
+    private cardDescriptionFontSize(lineCount: number): number {
+        if (lineCount >= 7) {
+            return 10;
+        }
+        if (lineCount >= 6) {
+            return 11;
+        }
+        if (lineCount >= 5) {
+            return 12;
+        }
+        return 14;
+    }
+
+    private renderCardDescription(parent: Node, def: CardDef, cardW: number): void {
+        const allLines = this.cardFaceDescription(def).split('\n').filter((line) => line.length > 0);
+        const maxLines = allLines.length >= 6 ? 6 : 5;
+        const lines = allLines.slice(0, maxLines);
+        if (allLines.length > maxLines && lines.length > 0) {
+            lines[lines.length - 1] = `${lines[lines.length - 1].slice(0, Math.max(0, CARD_DESCRIPTION_LINE_COLUMNS - 1))}…`;
+        }
+        const fontSize = this.cardDescriptionFontSize(lines.length);
+        const lineHeight = Math.ceil(fontSize * 1.22);
+        const topY = 3;
+        lines.forEach((line, index) => {
+            const lb = this.addLabel(parent, `Desc_${index}`, cardW - 34, lineHeight + 2, 0, topY - index * lineHeight, fontSize, new Color(42, 34, 25, 255));
+            lb.string = line;
+            lb.horizontalAlign = Label.HorizontalAlign.LEFT;
+            lb.verticalAlign = Label.VerticalAlign.CENTER;
+            lb.enableWrapText = false;
+            lb.overflow = Label.Overflow.SHRINK;
+        });
+    }
+
+    private isMultiTargetAttack(def: CardDef): boolean {
+        return !!def.damageAllEnemies || (this._activeShadow === 'wusheng' && def.type === 'attack');
     }
 
     private refreshLog(): void {

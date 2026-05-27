@@ -65,6 +65,19 @@ export class CombatCardFlow {
         return out;
     }
 
+    addToHand(card: CardInstance): void {
+        this.hand.push(card);
+    }
+
+    resetTemporaryCosts(): void {
+        const zones = [this.hand, this.drawPile, this.discardPile, this.exhaustPile];
+        for (const zone of zones) {
+            for (const card of zone) {
+                card.temporaryCost = null;
+            }
+        }
+    }
+
     /** 手牌索引打出：进弃牌或消耗堆；非法索引返回 false */
     playFromHand(handIndex: number): boolean {
         const c = this.hand[handIndex];

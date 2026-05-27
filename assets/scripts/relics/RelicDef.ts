@@ -2,13 +2,16 @@ export type RelicId =
     | 'neow_energy_core'
     | 'neow_spirit_wing'
     | 'neow_golden_rose'
-    | 'ironclad_burning_blood';
+    | 'ironclad_burning_blood'
+    | 'spirit_lantern';
 
 export interface RelicEffects {
     startCombatEnergy?: number;
     firstHpLossImmune?: boolean;
     goldRewardHeal?: number;
     victoryHeal?: number;
+    firstDescentCoverEnergy?: number;
+    firstDescentCoverDraw?: number;
 }
 
 export interface RelicDef {
@@ -27,6 +30,7 @@ export const NEOW_STARTER_RELIC_IDS: RelicId[] = [
 ];
 
 export const IRONCLAD_STARTER_RELIC_ID: RelicId = 'ironclad_burning_blood';
+export const SPIRIT_LANTERN_RELIC_ID: RelicId = 'spirit_lantern';
 
 export const RELIC_DEFS: RelicDef[] = [
     {
@@ -61,6 +65,14 @@ export const RELIC_DEFS: RelicDef[] = [
         pool: 'ironclad',
         effects: { victoryHeal: 6 },
     },
+    {
+        id: 'spirit_lantern',
+        name: '引魂灯',
+        description: '每回合第一次通过【降临】覆盖虚影时，获得 1 点能量并抽 1 张牌。',
+        iconPath: 'textures/relics/lantern',
+        pool: 'ironclad',
+        effects: { firstDescentCoverEnergy: 1, firstDescentCoverDraw: 1 },
+    },
 ];
 
 export function getRelicDef(id: string): RelicDef | null {
@@ -78,5 +90,5 @@ export function hasRelic(ids: readonly string[], id: RelicId): boolean {
 }
 
 export function getStarterRelicsForCharacter(charId: number): RelicId[] {
-    return charId === 2 ? [IRONCLAD_STARTER_RELIC_ID] : [];
+    return charId === 2 ? [IRONCLAD_STARTER_RELIC_ID, SPIRIT_LANTERN_RELIC_ID] : [SPIRIT_LANTERN_RELIC_ID];
 }
