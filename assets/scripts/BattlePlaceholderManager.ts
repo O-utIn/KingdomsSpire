@@ -61,7 +61,7 @@ interface EnemyView {
 const BATTLE_BG = 'textures/spire-codex-ui-map-backgrounds/map_middle_underdocks';
 
 const PLAYER_ART_BY_CHAR = [
-    'textures/chars/images_battle',
+    'textures/chars/output_512',
     'textures/chars/moj_battle',
     'textures/chars/small_battle',
 ] as const;

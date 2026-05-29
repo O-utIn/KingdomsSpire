@@ -31,13 +31,13 @@ export class CharSelectManager extends Component {
 
     // --- 核心配置数据 ---
     
-    // 角色列表（按照要求顺序：0静默, 1故障, 2铁甲）
+    // 角色列表（按照要求顺序：0祭酒, 1故障, 2铁甲）
     private charList: CharacterInfo[] = [
         { 
-            name: "静默猎手", 
+            name: "祭酒", 
             hp: 70, gold: 99, 
-            desc: "来自雾地的致命女猎手，擅长毒素与爆发。", 
-            artPath: "textures/chars/images_background" 
+            desc: "一个被诅咒缠身的凡人，拥有强大的暗影力量。", 
+            artPath: "textures/chars/character_background" 
         },
         { 
             name: "故障机器人", 
