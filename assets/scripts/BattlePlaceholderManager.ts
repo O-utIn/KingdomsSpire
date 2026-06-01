@@ -213,15 +213,16 @@ export class BattlePlaceholderManager extends Component {
 
     private createEncounterEnemyIds(kind: CombatEncounterKind, nodeId: number): EnemyId[] {
         if (kind === 'boss') {
-            return ['jaw_worm', 'cultist', 'red_louse'];
+            return Math.abs(nodeId) % 2 === 0 ? ['cao_cao_warlord'] : ['zhouyu_grand_duke'];
         }
         if (kind === 'elite') {
-            return ['jaw_worm', 'red_louse'];
+            return Math.abs(nodeId) % 2 === 0 ? ['xiahoudun_blind'] : ['ganning_raider'];
         }
         const normalPools: EnemyId[][] = [
             ['cultist'],
             ['jaw_worm'],
             ['red_louse', 'red_louse'],
+            ['tiger_leopard_rider', 'red_louse'],
         ];
         const index = Math.abs(nodeId) % normalPools.length;
         return normalPools[index] ?? ['cultist'];
@@ -556,7 +557,7 @@ export class BattlePlaceholderManager extends Component {
             }
         }
 
-        for (const enemy of this._enemies) {
+        for (const enemy of [...this._enemies]) {
             if (enemy.isDead) {
                 continue;
             }
@@ -565,17 +566,41 @@ export class BattlePlaceholderManager extends Component {
             const name = def?.name ?? enemy.defId;
 
             if (intent?.damage) {
-                const totalDamage = intent.damage + enemy.strength;
-                const hpLoss = this.damagePlayer(totalDamage);
-                this.pushLog(`${name} 攻击，造成 ${hpLoss}/${totalDamage} 点生命伤害。`);
+                const hits = Math.max(1, intent.hits ?? 1);
+                const damagePerHit = intent.damage + enemy.strength;
+                let totalHpLoss = 0;
+                for (let i = 0; i < hits; i++) {
+                    totalHpLoss += this.damagePlayer(damagePerHit);
+                    if (this.ensureSelectedCharacter().hp <= 0) {
+                        break;
+                    }
+                }
+                const totalDamage = damagePerHit * hits;
+                const hitText = hits > 1 ? `，攻击 ${hits} 次` : '';
+                this.pushLog(`${name} 攻击${hitText}，造成 ${totalHpLoss}/${totalDamage} 点生命伤害。`);
             }
             if (intent?.block) {
                 enemy.addBlock(intent.block);
                 this.pushLog(`${name} 获得 ${intent.block} 点格挡。`);
             }
-            if (intent?.strength) {
+            if (intent?.summons?.length) {
+                const summoned = this.summonEnemies(intent.summons, intent.summonLimitPerId);
+                if (summoned > 0) {
+                    this.pushLog(`${name} 召唤了 ${summoned} 名援军。`);
+                    this.rebuildEnemyPanels();
+                } else if (intent.strength) {
+                    const buffed = this.addFactionStrength(enemy.defId, intent.strength);
+                    this.pushLog(`${name} 号令全军，${buffed} 名友军获得 ${intent.strength} 点力量。`);
+                }
+            } else if (intent?.strength) {
                 enemy.strength += intent.strength;
                 this.pushLog(`${name} 获得 ${intent.strength} 点力量。`);
+            }
+            if (intent?.playerDebuff) {
+                this.pushLog(`${name} 施加 ${intent.playerDebuff}。`);
+            }
+            if (intent?.statusCards) {
+                this.pushLog(`${name} 将 ${intent.statusCards} 加入战斗压力（状态牌效果待接入）。`);
             }
 
             enemy.advanceIntent();
@@ -586,6 +611,45 @@ export class BattlePlaceholderManager extends Component {
         }
 
         this.startPlayerTurn();
+    }
+
+    private summonEnemies(ids: readonly EnemyId[], limitPerId = 2): number {
+        let summoned = 0;
+        for (const id of ids) {
+            if (this.countAliveEnemiesByDefId(id) >= limitPerId) {
+                continue;
+            }
+            this._enemies.push(createEnemyInstance(id));
+            summoned += 1;
+        }
+        if (summoned > 0 && !this.selectedEnemy()) {
+            this._selectedEnemyUid = this.firstAliveEnemy()?.uid ?? 0;
+        }
+        return summoned;
+    }
+
+    private countAliveEnemiesByDefId(id: EnemyId): number {
+        return this._enemies.filter((enemy) => enemy.defId === id && !enemy.isDead).length;
+    }
+
+    private addFactionStrength(sourceDefId: EnemyId, amount: number): number {
+        const sourceFaction = getEnemyDef(sourceDefId)?.faction;
+        let buffed = 0;
+        for (const enemy of this._enemies) {
+            const def = getEnemyDef(enemy.defId);
+            const isSameFaction = sourceFaction ? def?.faction === sourceFaction : enemy.defId === sourceDefId;
+            if (!enemy.isDead && isSameFaction) {
+                enemy.strength += amount;
+                buffed += 1;
+            }
+        }
+        return buffed;
+    }
+
+    private rebuildEnemyPanels(): void {
+        this.node.getChildByName('EnemyRoot')?.destroy();
+        const vs = view.getVisibleSize();
+        this.buildEnemyPanels(vs.width, vs.height);
     }
 
     private tryPlayCard(handIndex: number): void {
