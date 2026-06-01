@@ -20,6 +20,7 @@ export interface EnemyDef {
     id: EnemyId;
     name: string;
     maxHp: number;
+    artPath?: string;
     faction?: 'neutral' | 'wei' | 'wu';
     tier?: 'normal' | 'elite' | 'boss' | 'minion';
     role: string;
@@ -95,6 +96,7 @@ const DEFS: Record<EnemyId, EnemyDef> = {
         id: 'cao_cao_warlord',
         name: '乱世奸雄·曹操',
         maxHp: 240,
+        artPath: 'textures/chars/cao_cao_warlord2',
         faction: 'wei',
         tier: 'boss',
         role: '第一层 Boss，检验 AOE 清理能力和状态保持',
@@ -129,6 +131,7 @@ const DEFS: Record<EnemyId, EnemyDef> = {
         id: 'zhouyu_grand_duke',
         name: '大都督·周瑜',
         maxHp: 320,
+        artPath: 'textures/chars/zhouyu_grand_duke2',
         faction: 'wu',
         tier: 'boss',
         role: '第二层 Boss，检验成型速度和极限生存',

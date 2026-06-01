@@ -51,6 +51,8 @@ interface EnemyView {
     enemy: EnemyInstance;
     root: Node;
     frame: Graphics;
+    frameW: number;
+    frameH: number;
     hpBar: Graphics;
     nameLabel: Label;
     hpLabel: Label;
@@ -418,43 +420,75 @@ export class BattlePlaceholderManager extends Component {
         const root = new Node('EnemyRoot');
         this.node.addChild(root);
         const rootUt = root.addComponent(UITransform);
-        rootUt.setContentSize(Math.min(950, w * 0.56), 330);
+        rootUt.setContentSize(Math.min(1080, w * 0.62), 420);
         root.setPosition(w * 0.16, 20, 0);
 
-        const gap = 260;
+        const gap = this._enemies.some((enemy) => getEnemyDef(enemy.defId)?.tier === 'boss') ? 310 : 260;
         const startX = -gap * (this._enemies.length - 1) * 0.5;
         this._enemyViews = this._enemies.map((enemy, i) => {
+            const isBoss = getEnemyDef(enemy.defId)?.tier === 'boss';
+            const frameW = isBoss ? 340 : 220;
+            const frameH = isBoss ? 430 : 260;
             const panel = new Node(`Enemy_${enemy.uid}`);
             root.addChild(panel);
             panel.setPosition(startX + i * gap, 0, 0);
             panel.on(Node.EventType.TOUCH_END, () => this.selectEnemy(enemy.uid), this);
 
             const ut = panel.addComponent(UITransform);
-            ut.setContentSize(220, 260);
+            ut.setContentSize(frameW, frameH);
             const frame = panel.addComponent(Graphics);
 
             const avatar = new Node('EnemyAvatar');
             panel.addChild(avatar);
-            avatar.setPosition(0, 38, 0);
+            avatar.setPosition(0, isBoss ? 82 : 36, 0);
             const aUt = avatar.addComponent(UITransform);
-            aUt.setContentSize(94, 94);
+            const avatarW = isBoss ? 270 : 94;
+            const avatarH = isBoss ? 390 : 94;
+            aUt.setContentSize(avatarW, avatarH);
             const aG = avatar.addComponent(Graphics);
-            paintRoundRect(aG, 94, 94, new Color(93, 54, 58, 255), new Color(210, 120, 108, 255));
-            this.addLabel(avatar, 'AvatarText', 82, 34, 0, 0, 28, new Color(250, 220, 180, 255)).string = '敌';
+            if (!isBoss) {
+                paintRoundRect(aG, avatarW, avatarH, new Color(93, 54, 58, 255), new Color(210, 120, 108, 255));
+            }
+            const avatarText = this.addLabel(avatar, 'AvatarText', avatarW - 12, 34, 0, 0, 28, new Color(250, 220, 180, 255));
+            avatarText.string = '敌';
+            this.tryLoadEnemyArt(avatar, enemy.defId, avatarW, avatarH, avatarText);
 
-            const nameLabel = this.addLabel(panel, 'Name', 190, 28, 0, 104, 20, new Color(255, 220, 160, 255));
-            const hpLabel = this.addLabel(panel, 'Hp', 180, 24, 0, -32, 18, new Color(238, 238, 238, 255));
-            const blockLabel = this.addLabel(panel, 'Block', 180, 24, 0, -58, 17, new Color(180, 222, 255, 255));
-            const intentLabel = this.addLabel(panel, 'Intent', 190, 44, 0, -96, 16, new Color(226, 232, 242, 255));
+            const nameLabel = this.addLabel(panel, 'Name', frameW - 30, 28, 0, isBoss ? -126 : 104, 20, new Color(255, 220, 160, 255));
+            const hpLabel = this.addLabel(panel, 'Hp', frameW - 40, 24, 0, isBoss ? -154 : -32, 18, new Color(238, 238, 238, 255));
+            const blockLabel = this.addLabel(panel, 'Block', frameW - 40, 24, 0, isBoss ? -180 : -58, 17, new Color(180, 222, 255, 255));
+            const intentLabel = this.addLabel(panel, 'Intent', frameW + (isBoss ? 120 : -30), isBoss ? 56 : 44, 0, isBoss ? -224 : -96, 16, new Color(226, 232, 242, 255));
+            if (isBoss) {
+                intentLabel.lineHeight = 22;
+            }
 
             const hpBarNode = new Node('HpBar');
             panel.addChild(hpBarNode);
-            hpBarNode.setPosition(0, -10, 0);
+            hpBarNode.setPosition(0, isBoss ? -106 : -10, 0);
             const hbUt = hpBarNode.addComponent(UITransform);
-            hbUt.setContentSize(160, 12);
+            hbUt.setContentSize(isBoss ? 230 : 160, 12);
             const hpBar = hpBarNode.addComponent(Graphics);
 
-            return { enemy, root: panel, frame, hpBar, nameLabel, hpLabel, blockLabel, intentLabel };
+            return { enemy, root: panel, frame, frameW, frameH, hpBar, nameLabel, hpLabel, blockLabel, intentLabel };
+        });
+    }
+
+    private tryLoadEnemyArt(parent: Node, defId: EnemyId, width: number, height: number, fallbackLabel: Label): void {
+        const artPath = getEnemyDef(defId)?.artPath;
+        if (!artPath) {
+            return;
+        }
+        const artNode = new Node('EnemyArt');
+        parent.addChild(artNode);
+        const artUt = artNode.addComponent(UITransform);
+        artUt.setContentSize(width, height);
+        const sprite = artNode.addComponent(Sprite);
+        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        loadSpriteFrame(artPath).then((sf) => {
+            if (!sf || !artNode.isValid) {
+                return;
+            }
+            sprite.spriteFrame = sf;
+            fallbackLabel.node.active = false;
         });
     }
 
@@ -1124,9 +1158,14 @@ export class BattlePlaceholderManager extends Component {
             const enemy = viewData.enemy;
             const def = getEnemyDef(enemy.defId);
             const selected = enemy.uid === this._selectedEnemyUid && !enemy.isDead;
-            const fill = enemy.isDead ? new Color(44, 44, 48, 210) : new Color(45, 36, 42, 232);
-            const stroke = selected ? new Color(255, 218, 110, 255) : new Color(130, 82, 82, 255);
-            paintRoundRect(viewData.frame, 220, 260, fill, stroke, selected ? 5 : 2);
+            const isBoss = def?.tier === 'boss';
+            if (isBoss) {
+                this.paintBossInfoPanel(viewData.frame, viewData.frameW, viewData.frameH, selected, enemy.isDead);
+            } else {
+                const fill = enemy.isDead ? new Color(44, 44, 48, 210) : new Color(45, 36, 42, 232);
+                const stroke = selected ? new Color(255, 218, 110, 255) : new Color(130, 82, 82, 255);
+                paintRoundRect(viewData.frame, viewData.frameW, viewData.frameH, fill, stroke, selected ? 5 : 2);
+            }
             viewData.nameLabel.string = enemy.isDead ? `${def?.name ?? enemy.defId}（已击倒）` : def?.name ?? enemy.defId;
             viewData.hpLabel.string = `生命 ${enemy.currentHp}/${enemy.maxHp}`;
             viewData.blockLabel.string = `格挡 ${enemy.block}  力量 ${enemy.strength}`;
@@ -1135,8 +1174,24 @@ export class BattlePlaceholderManager extends Component {
         }
     }
 
+    private paintBossInfoPanel(g: Graphics, w: number, h: number, selected: boolean, dead: boolean): void {
+        g.clear();
+        const panelW = w - 34;
+        const panelH = 118;
+        const panelY = -h * 0.5 + panelH * 0.5 + 18;
+        g.fillColor = dead ? new Color(25, 25, 28, 130) : new Color(10, 14, 20, 150);
+        g.roundRect(-panelW * 0.5, panelY - panelH * 0.5, panelW, panelH, 8);
+        g.fill();
+        if (selected) {
+            g.lineWidth = 3;
+            g.strokeColor = new Color(255, 218, 110, 210);
+            g.roundRect(-panelW * 0.5, panelY - panelH * 0.5, panelW, panelH, 8);
+            g.stroke();
+        }
+    }
+
     private paintEnemyHpBar(g: Graphics, enemy: EnemyInstance): void {
-        const w = 160;
+        const w = getEnemyDef(enemy.defId)?.tier === 'boss' ? 230 : 160;
         const h = 12;
         g.clear();
         g.fillColor = new Color(48, 30, 34, 255);
