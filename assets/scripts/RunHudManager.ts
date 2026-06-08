@@ -12,6 +12,7 @@ import {
     UITransform,
     view,
 } from 'cc';
+import { DeckPreviewManager } from './DeckPreviewManager';
 import { GlobalData } from './GlobalData';
 
 const { ccclass } = _decorator;
@@ -28,6 +29,9 @@ export class RunHudManager extends Component {
     private _leftLabel: Label | null = null;
     private _centerLabel: Label | null = null;
     private _rightLabel: Label | null = null;
+    private _deckButton: Node | null = null;
+    private _deckButtonGraphics: Graphics | null = null;
+    private _deckButtonLabel: Label | null = null;
     private _lastW = 0;
     private _lastH = 0;
     private _lastText = '';
@@ -37,6 +41,7 @@ export class RunHudManager extends Component {
     }
 
     public static stopRun(): void {
+        DeckPreviewManager.destroyRoot();
         const root = this._root?.isValid ? this._root : director.getScene()?.getChildByName(HUD_ROOT_NAME);
         if (root?.isValid) {
             director.removePersistRootNode(root);
@@ -129,10 +134,11 @@ export class RunHudManager extends Component {
 
         const gd = GlobalData.instance;
         const ch = gd.selectedChar;
-        const left = ch ? `❤ ${ch.hp}/${ch.maxHp}     金币 ${ch.gold}` : '';
+        const left = ch ? `生命 ${ch.hp}/${ch.maxHp}     金币 ${ch.gold}` : '';
         const center = gd.runHudCenterText;
-        const elapsedRight = `用时 ${gd.getRunElapsedText()}     牌组 ${gd.deckCount}`;
-        const text = `${left}|${center}|${elapsedRight}`;
+        const elapsedRight = `用时 ${gd.getRunElapsedText()}`;
+        const deckText = `牌组 ${gd.deckIds.length || gd.deckCount}`;
+        const text = `${left}|${center}|${elapsedRight}|${deckText}`;
         if (text === this._lastText) {
             return;
         }
@@ -146,6 +152,9 @@ export class RunHudManager extends Component {
         }
         if (this._rightLabel) {
             this._rightLabel.string = elapsedRight;
+        }
+        if (this._deckButtonLabel) {
+            this._deckButtonLabel.string = deckText;
         }
     }
 
@@ -164,7 +173,21 @@ export class RunHudManager extends Component {
         this._leftLabel = this.makeLabel(bar, 'Left', Label.HorizontalAlign.LEFT);
         this._centerLabel = this.makeLabel(bar, 'Center', Label.HorizontalAlign.CENTER);
         this._rightLabel = this.makeLabel(bar, 'Right', Label.HorizontalAlign.RIGHT);
+        this.buildDeckButton(bar);
         this.layout(view.getVisibleSize().width, view.getVisibleSize().height);
+    }
+
+    private buildDeckButton(parent: Node): void {
+        const n = new Node('DeckPreviewButton');
+        parent.addChild(n);
+        n.layer = Layers.Enum.UI_2D;
+        n.addComponent(UITransform);
+        this._deckButtonGraphics = n.addComponent(Graphics);
+        this._deckButtonLabel = this.makeLabel(n, 'Label', Label.HorizontalAlign.CENTER);
+        this._deckButton = n;
+        n.on(Node.EventType.TOUCH_END, () => DeckPreviewManager.show(), this);
+        n.on(Node.EventType.MOUSE_ENTER, () => this.paintDeckButton(true), this);
+        n.on(Node.EventType.MOUSE_LEAVE, () => this.paintDeckButton(false), this);
     }
 
     private makeLabel(parent: Node, name: string, align: number): Label {
@@ -217,7 +240,8 @@ export class RunHudManager extends Component {
 
         this.layoutLabel(this._leftLabel, -w * 0.5 + 38, -HUD_HEIGHT * 0.5, 420, 48, 0, 0.5);
         this.layoutLabel(this._centerLabel, 0, -HUD_HEIGHT * 0.5, Math.max(520, w - 920), 48, 0.5, 0.5);
-        this.layoutLabel(this._rightLabel, w * 0.5 - 38, -HUD_HEIGHT * 0.5, 420, 48, 1, 0.5);
+        this.layoutLabel(this._rightLabel, w * 0.5 - 204, -HUD_HEIGHT * 0.5, 260, 48, 1, 0.5);
+        this.layoutDeckButton(w);
     }
 
     private layoutLabel(label: Label | null, x: number, y: number, w: number, h: number, ax: number, ay: number): void {
@@ -229,5 +253,33 @@ export class RunHudManager extends Component {
         ui.setContentSize(w, h);
         ui.anchorPoint.set(ax, ay);
         n.setPosition(x, y, 0);
+    }
+
+    private layoutDeckButton(w: number): void {
+        const btn = this._deckButton;
+        const ui = btn?.getComponent(UITransform);
+        if (!btn || !ui) {
+            return;
+        }
+        ui.setContentSize(142, 44);
+        ui.anchorPoint.set(0.5, 0.5);
+        btn.setPosition(w * 0.5 - 84, -HUD_HEIGHT * 0.5, 0);
+        this.layoutLabel(this._deckButtonLabel, 0, 0, 124, 34, 0.5, 0.5);
+        this.paintDeckButton(false);
+    }
+
+    private paintDeckButton(hover: boolean): void {
+        const g = this._deckButtonGraphics;
+        if (!g) {
+            return;
+        }
+        g.clear();
+        g.fillColor = hover ? new Color(78, 106, 126, 232) : new Color(40, 52, 66, 220);
+        g.roundRect(-71, -22, 142, 44, 8);
+        g.fill();
+        g.lineWidth = 2;
+        g.strokeColor = hover ? new Color(255, 218, 120, 255) : new Color(118, 136, 156, 230);
+        g.roundRect(-71, -22, 142, 44, 8);
+        g.stroke();
     }
 }

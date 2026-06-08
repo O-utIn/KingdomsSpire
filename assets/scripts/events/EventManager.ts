@@ -15,8 +15,14 @@ import {
     Widget,
     view,
 } from 'cc';
-import { SCENE_GAME_MAP } from '../GameConfig';
+import { SCENE_BATTLE, SCENE_GAME_MAP } from '../GameConfig';
+import { GlobalAudioManager } from '../GlobalAudioManager';
 import { GlobalData } from '../GlobalData';
+import { RunHudManager } from '../RunHudManager';
+import type { CardId } from '../cards/CardDef';
+import { getCardDef } from '../cards/CardDef';
+import type { RelicId } from '../relics/RelicDef';
+import { getRelicDef } from '../relics/RelicDef';
 import { EventDef, EventChoice, EventResult } from './EventDef';
 import { EVENT_POOL } from './EventPool';
 
@@ -31,7 +37,13 @@ export class EventManager extends Component {
     private _choicesContainer: Node | null = null;
     private _currentEvent: EventDef | null = null;
 
+    private readonly _eventCardRewards: CardId[] = ['scheme', 'survivor', 'blood_rite', 'bridge_break'];
+    private readonly _eventRelicRewards: RelicId[] = ['neow_energy_core', 'neow_spirit_wing', 'neow_golden_rose'];
+
     onLoad(): void {
+        GlobalAudioManager.playRunBgm();
+        RunHudManager.startRun();
+        RunHudManager.setCenterText('事件  |  选择');
         this.buildUI();
     }
 
@@ -269,7 +281,7 @@ export class EventManager extends Component {
         // 如果是战斗，进入战斗场景
         if (result.type === 'combat') {
             GlobalData.instance.prepareEncounter('monster', -1);
-            // 这里应该进入战斗场景
+            director.loadScene(SCENE_BATTLE);
             return;
         }
 
@@ -279,7 +291,8 @@ export class EventManager extends Component {
 
     /** 应用事件结果到玩家状态 */
     private applyResult(result: EventResult): void {
-        const char = GlobalData.instance.selectedChar;
+        const gd = GlobalData.instance;
+        const char = gd.selectedChar;
         if (!char) return;
 
         switch (result.type) {
@@ -299,9 +312,58 @@ export class EventManager extends Component {
                 char.maxHp += result.value ?? 0;
                 char.hp += result.value ?? 0;
                 break;
+            case 'gain_card':
+                this.gainEventCards(result);
+                break;
+            case 'remove_card':
+                this.removeEventCards(result);
+                break;
+            case 'gain_relic':
+                this.gainEventRelic(result);
+                break;
         }
+        gd.deckCount = gd.deckIds.length || gd.deckCount;
+        RunHudManager.startRun();
 
         console.log(`[Event] ${result.description}`);
+    }
+
+    private gainEventCards(result: EventResult): void {
+        const gd = GlobalData.instance;
+        const count = Math.max(1, result.value ?? 1);
+        const preferred = result.data && getCardDef(result.data) ? result.data : '';
+        for (let i = 0; i < count; i++) {
+            const id = (preferred || this._eventCardRewards[(gd.deckIds.length + i) % this._eventCardRewards.length]) as CardId;
+            if (getCardDef(id)) {
+                gd.deckIds.push(id);
+            }
+        }
+        gd.deckCount = gd.deckIds.length;
+    }
+
+    private removeEventCards(result: EventResult): void {
+        const gd = GlobalData.instance;
+        const count = Math.max(1, result.value ?? 1);
+        for (let i = 0; i < count && gd.deckIds.length > 0; i++) {
+            const preferred = result.data ? gd.deckIds.indexOf(result.data) : -1;
+            const strike = gd.deckIds.indexOf('strike');
+            const idx = preferred >= 0 ? preferred : strike >= 0 ? strike : 0;
+            gd.deckIds.splice(idx, 1);
+        }
+        gd.deckCount = gd.deckIds.length;
+    }
+
+    private gainEventRelic(result: EventResult): void {
+        const char = GlobalData.instance.selectedChar;
+        if (!char) {
+            return;
+        }
+        const preferred = result.data && getRelicDef(result.data) ? result.data : '';
+        const fallback = this._eventRelicRewards.find((id) => !char.relics.includes(id));
+        const id = (preferred || fallback) as RelicId | '';
+        if (id && getRelicDef(id) && !char.relics.includes(id)) {
+            char.relics.push(id);
+        }
     }
 
     /** 返回地图场景 */

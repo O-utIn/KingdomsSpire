@@ -32,6 +32,10 @@ export class GlobalData {
     public runHudCenterText: string = '';
     public runStartedAtMs: number = 0;
     public runEndedAtMs: number = 0;
+    public runBattlesWon: number = 0;
+    public runBattlesLost: number = 0;
+    public runEnemiesKilled: number = 0;
+    public runResult: '' | 'victory' | 'defeat' = '';
 
     /** 地图进入战斗前写入，战斗场景用它决定怪物组和奖励 */
     public pendingEncounterKind: CombatEncounterKind = '';
@@ -58,6 +62,10 @@ export class GlobalData {
         this.shopRemovalCount = 0;
         this.resolvedMapNodeIds = [];
         this.runHudCenterText = '';
+        this.runBattlesWon = 0;
+        this.runBattlesLost = 0;
+        this.runEnemiesKilled = 0;
+        this.runResult = '';
         this.startRunTimer();
     }
 
@@ -70,6 +78,19 @@ export class GlobalData {
         if (this.runStartedAtMs > 0 && this.runEndedAtMs <= 0) {
             this.runEndedAtMs = Date.now();
         }
+    }
+
+    public recordBattleVictory(kills: number): void {
+        this.runBattlesWon += 1;
+        this.runEnemiesKilled += Math.max(0, kills);
+        this.runResult = this.isFinalMapEncounter() ? 'victory' : this.runResult;
+    }
+
+    public recordBattleDefeat(kills: number): void {
+        this.runBattlesLost += 1;
+        this.runEnemiesKilled += Math.max(0, kills);
+        this.runResult = 'defeat';
+        this.finishRunTimer();
     }
 
     public getRunElapsedMs(): number {

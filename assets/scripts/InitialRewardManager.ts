@@ -18,6 +18,7 @@ import { GlobalData, CharacterPackage } from './GlobalData';
 import { MapScreenManager } from './MapScreenManager';
 import { getRelicDef, getStarterRelicsForCharacter, NEOW_STARTER_RELIC_IDS } from './relics/RelicDef';
 import type { RelicDef, RelicId } from './relics/RelicDef';
+import { GlobalAudioManager } from './GlobalAudioManager';
 import { RunHudManager } from './RunHudManager';
 import { getStarterDeckForCharacter } from './cards/StarterDeck';
 const { ccclass, property } = _decorator;
@@ -72,6 +73,7 @@ export class InitialRewardManager extends Component {
         gd.deckIds = getStarterDeckForCharacter(row.id);
         gd.deckCount = gd.deckIds.length;
 
+        GlobalAudioManager.playRunBgm();
         RunHudManager.setCenterText('选择初始遗物');
     }
 

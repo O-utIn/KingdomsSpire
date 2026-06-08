@@ -1,4 +1,5 @@
 import { _decorator, Component, director, game } from 'cc';
+import { GlobalAudioManager } from './GlobalAudioManager';
 import { RunHudManager } from './RunHudManager';
 const { ccclass } = _decorator;
 
@@ -6,6 +7,7 @@ const { ccclass } = _decorator;
 export class MainMenuManager extends Component {
     onLoad(): void {
         RunHudManager.stopRun();
+        GlobalAudioManager.stopBgm();
     }
 
     /**

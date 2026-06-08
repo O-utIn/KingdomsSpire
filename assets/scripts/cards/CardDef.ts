@@ -12,6 +12,8 @@ export interface CardDef {
     type: CardType;
     /** 简短说明，UI 用 */
     description: string;
+    /** resources 下的卡面或卡图路径，不含 /spriteFrame */
+    artPath?: string;
     /** 对选中敌人造成的伤害 */
     damage?: number;
     /** 伤害打到全部敌人 */
@@ -20,7 +22,7 @@ export interface CardDef {
     block?: number;
     /** 抽牌数量 */
     draw?: number;
-    /** 场上有虚影时改为抽牌数量 */
+    /** 场上有【虚影】时改为抽牌数量 */
     drawIfShadow?: number;
     /** 直接失去生命，不受格挡或免伤影响 */
     hpLoss?: number;
@@ -43,6 +45,7 @@ const DEFS: Record<CardId, CardDef> = {
         cost: 1,
         type: 'attack',
         description: '造成 6 点伤害。',
+        artPath: 'textures/cards/perfected_strike',
         damage: 6,
     },
     strike_plus: {
@@ -51,6 +54,7 @@ const DEFS: Record<CardId, CardDef> = {
         cost: 1,
         type: 'attack',
         description: '造成 9 点伤害。',
+        artPath: 'textures/cards/perfected_strike',
         damage: 9,
     },
     defend: {
@@ -59,6 +63,7 @@ const DEFS: Record<CardId, CardDef> = {
         cost: 1,
         type: 'skill',
         description: '获得 5 点格挡。',
+        artPath: 'textures/cards/survivor',
         block: 5,
     },
     bash: {
@@ -67,6 +72,7 @@ const DEFS: Record<CardId, CardDef> = {
         cost: 2,
         type: 'attack',
         description: '造成 8 点伤害。',
+        artPath: 'textures/cards/bash',
         damage: 8,
     },
     survivor: {
@@ -75,6 +81,7 @@ const DEFS: Record<CardId, CardDef> = {
         cost: 1,
         type: 'skill',
         description: '消耗：获得 8 点格挡。',
+        artPath: 'textures/cards/survivor',
         block: 8,
         exhaustsOnPlay: true,
     },
@@ -83,7 +90,8 @@ const DEFS: Record<CardId, CardDef> = {
         name: '降临',
         cost: 1,
         type: 'skill',
-        description: '【降临】：覆盖虚影，获得 4 点格挡。',
+        description: '【降临】：覆盖基础虚影，获得 4 点格挡。',
+        artPath: 'textures/cards/capture_spirit',
         block: 4,
         descentShadow: 'spirit',
     },
@@ -93,6 +101,7 @@ const DEFS: Record<CardId, CardDef> = {
         cost: 0,
         type: 'skill',
         description: '抽 1 张牌。若场上有【虚影】，改为抽 2 张牌。消耗。',
+        artPath: 'textures/cards/battle_trance',
         draw: 1,
         drawIfShadow: 2,
         exhaustsOnPlay: true,
@@ -102,7 +111,8 @@ const DEFS: Record<CardId, CardDef> = {
         name: '降临：武圣',
         cost: 2,
         type: 'attack',
-        description: '【降临】：对所有敌人造成 12 点伤害。虚影常驻：攻击变群体且 +2。',
+        description: '【降临】：对所有敌人造成 12 点伤害。虚影常驻：所有攻击变为群体伤害且 +2。',
+        artPath: 'textures/chars/Phantom/guanyu',
         damage: 12,
         damageAllEnemies: true,
         descentShadow: 'wusheng',
@@ -112,7 +122,8 @@ const DEFS: Record<CardId, CardDef> = {
         name: '降临：卧龙',
         cost: 0,
         type: 'skill',
-        description: '【降临】：抽 2 张牌。虚影常驻：打出技能后手牌中【降临】费用 -1。',
+        description: '【降临】：抽 2 张牌。虚影常驻：每打出技能牌，手牌中所有【降临】费用 -1。',
+        artPath: 'textures/chars/Phantom/zhuge',
         draw: 2,
         descentShadow: 'wolong',
     },
@@ -121,7 +132,8 @@ const DEFS: Record<CardId, CardDef> = {
         name: '降临：无双',
         cost: 2,
         type: 'attack',
-        description: '【降临】：对指定敌人造成 28 点伤害。虚影常驻：格挡牌变攻击且 +5。',
+        description: '【降临】：对指定敌人造成 28 点伤害。虚影常驻：格挡牌变为攻击且 +5。',
+        artPath: 'textures/chars/Phantom/zhaoyun',
         damage: 28,
         descentShadow: 'wushuang',
     },
@@ -131,6 +143,7 @@ const DEFS: Record<CardId, CardDef> = {
         cost: 1,
         type: 'skill',
         description: '强制当前【虚影】离场，触发【离场】效果，然后获得 8 点格挡。',
+        artPath: 'textures/cards/burning_pact',
         block: 8,
         forcesShadowLeave: true,
     },
@@ -139,7 +152,8 @@ const DEFS: Record<CardId, CardDef> = {
         name: '血祭',
         cost: 0,
         type: 'skill',
-        description: '失去 3 点生命，生成一张随机【降临】牌，本回合耗能为 0。消耗。',
+        description: '失去 3 点生命，将一张随机【降临】牌加入手牌，其本回合耗能为 0。消耗。',
+        artPath: 'textures/cards/bloodletting',
         hpLoss: 3,
         createsRandomDescent: true,
         exhaustsOnPlay: true,
@@ -150,6 +164,7 @@ const DEFS: Record<CardId, CardDef> = {
         cost: 2,
         type: 'power',
         description: '能力：虚影离场时自动弃 1 张手牌，获得 1 能量并抽 1 张牌。',
+        artPath: 'textures/cards/battle_trance',
         grantsPower: 'tactical_terrain',
         exhaustsOnPlay: true,
     },

@@ -20,6 +20,7 @@ import {
     view,
 } from 'cc';
 import { SCENE_BATTLE, SCENE_EVENT } from './GameConfig';
+import { GlobalAudioManager } from './GlobalAudioManager';
 import { GlobalData } from './GlobalData';
 import { RunHudManager } from './RunHudManager';
 import type { CardId } from './cards/CardDef';
@@ -234,6 +235,7 @@ export class MapScreenManager extends Component {
             GlobalData.instance.mapPathNodeIds = [0];
         }
         GlobalData.instance.mapFloorCount = MAX_FLOOR + 1;
+        GlobalAudioManager.playRunBgm();
         RunHudManager.startRun();
         this.refreshRunHud();
         /** 先铺地图再叠 UI，避免 MapContent 盖住顶栏（参考图层次） */

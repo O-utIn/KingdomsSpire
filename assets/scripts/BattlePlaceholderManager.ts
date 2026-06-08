@@ -16,6 +16,7 @@ import {
     Widget,
 } from 'cc';
 import { SCENE_GAME_MAP, SCENE_MAIN_MENU } from './GameConfig';
+import { GlobalAudioManager } from './GlobalAudioManager';
 import { GlobalData } from './GlobalData';
 import type { CharacterPackage, CombatEncounterKind } from './GlobalData';
 import { getRelicDefs, getStarterRelicsForCharacter } from './relics/RelicDef';
@@ -43,6 +44,12 @@ const SHADOW_NAME: Record<ShadowId, string> = {
     wusheng: '武圣',
     wolong: '卧龙',
     wushuang: '无双',
+};
+
+const SHADOW_ART: Partial<Record<ShadowId, string>> = {
+    wusheng: 'textures/chars/Phantom/guanyu',
+    wolong: 'textures/chars/Phantom/zhuge',
+    wushuang: 'textures/chars/Phantom/zhaoyun',
 };
 
 const CARD_DESCRIPTION_LINE_COLUMNS = 8;
@@ -142,10 +149,14 @@ export class BattlePlaceholderManager extends Component {
     private _zhouyuFlameLevel = 0;
     private _zhouyuFlameGrowthThisTurn = 0;
     private _finalRunSettlement = false;
+    private _killCountThisBattle = 0;
+    private readonly _countedDeadEnemyUids = new Set<number>();
 
     private _playerHpLabel: Label | null = null;
     private _playerBlockLabel: Label | null = null;
     private _energyLabel: Label | null = null;
+    private _shadowSprite: Sprite | null = null;
+    private _shadowLabel: Label | null = null;
     private _logLabel: Label | null = null;
     private _handRoot: Node | null = null;
     private _relicTooltip: Node | null = null;
@@ -156,6 +167,7 @@ export class BattlePlaceholderManager extends Component {
     async start(): Promise<void> {
         this.syncCanvasCameraToScreen();
         this.setupCombatData();
+        GlobalAudioManager.playRunBgm();
         RunHudManager.startRun();
         await this.buildSceneGraph();
         this.startPlayerTurn(true);
@@ -209,6 +221,8 @@ export class BattlePlaceholderManager extends Component {
         this._zhouyuFlameLevel = 0;
         this._zhouyuFlameGrowthThisTurn = 0;
         this._finalRunSettlement = false;
+        this._killCountThisBattle = 0;
+        this._countedDeadEnemyUids.clear();
         this._logLines.length = 0;
         this.pushLog(`进入${encounterTitle(this._encounterKind)}。`);
     }
@@ -292,14 +306,14 @@ export class BattlePlaceholderManager extends Component {
     }
 
     private async buildPlayerPanel(w: number, h: number): Promise<void> {
-        const root = this.makePanel('PlayerPanel', 310, 330, -w * 0.34, -20, new Color(31, 38, 50, 225), new Color(80, 105, 138, 255));
+        const root = this.makePanel('PlayerPanel', 330, 380, -w * 0.34, -10, new Color(31, 38, 50, 225), new Color(80, 105, 138, 255));
         this.addLabel(root, 'PlayerTitle', 270, 34, 0, 132, 22, new Color(255, 218, 134, 255));
 
         const artNode = new Node('PlayerArt');
         root.addChild(artNode);
-        artNode.setPosition(0, 58, 0);
+        artNode.setPosition(-72, 54, 0);
         const artUt = artNode.addComponent(UITransform);
-        artUt.setContentSize(124, 124);
+        artUt.setContentSize(118, 118);
         const artSf = await loadSpriteFrame(PLAYER_ART_BY_CHAR[GlobalData.instance.selectedCharId] ?? PLAYER_ART_BY_CHAR[0]);
         if (artSf) {
             const sp = artNode.addComponent(Sprite);
@@ -307,8 +321,25 @@ export class BattlePlaceholderManager extends Component {
             sp.sizeMode = Sprite.SizeMode.CUSTOM;
         } else {
             const g = artNode.addComponent(Graphics);
-            paintRoundRect(g, 124, 124, new Color(60, 86, 115, 255), new Color(130, 160, 195, 255));
+            paintRoundRect(g, 118, 118, new Color(60, 86, 115, 255), new Color(130, 160, 195, 255));
         }
+
+        const shadowNode = new Node('ShadowArt');
+        root.addChild(shadowNode);
+        shadowNode.setPosition(80, 54, 0);
+        const shadowUt = shadowNode.addComponent(UITransform);
+        shadowUt.setContentSize(118, 118);
+        const shadowBg = shadowNode.addComponent(Graphics);
+        paintRoundRect(shadowBg, 118, 118, new Color(18, 22, 30, 180), new Color(126, 148, 170, 220));
+        const shadowSpriteNode = new Node('Sprite');
+        shadowNode.addChild(shadowSpriteNode);
+        const shadowSpriteUt = shadowSpriteNode.addComponent(UITransform);
+        shadowSpriteUt.setContentSize(112, 112);
+        this._shadowSprite = shadowSpriteNode.addComponent(Sprite);
+        this._shadowSprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        this._shadowSprite.node.active = false;
+        this._shadowLabel = this.addLabel(shadowNode, 'ShadowText', 104, 30, 0, -46, 16, new Color(210, 222, 236, 255));
+        this._shadowLabel.string = '无虚影';
 
         this._playerHpLabel = this.addLabel(root, 'PlayerHp', 270, 28, 0, -24, 22, new Color(245, 232, 224, 255));
         this._playerBlockLabel = this.addLabel(root, 'PlayerBlock', 270, 28, 0, -112, 20, new Color(190, 225, 255, 255));
@@ -769,7 +800,7 @@ export class BattlePlaceholderManager extends Component {
             this.finishVictory();
             return;
         }
-        if (!this.selectedEnemy()?.isDead) {
+        if (this.selectedEnemy()) {
             this.refreshAll();
             return;
         }
@@ -801,10 +832,11 @@ export class BattlePlaceholderManager extends Component {
         const damage = this.effectiveDamage(def);
         if (damage > 0) {
             for (const enemy of damageTargets) {
+                const wasDead = enemy.isDead;
                 const hpLoss = enemy.takeDamage(damage);
                 const targetName = getEnemyDef(enemy.defId)?.name ?? enemy.defId;
                 parts.push(`对 ${targetName} 造成 ${hpLoss}/${damage} 点生命伤害`);
-                if (enemy.isDead) {
+                if (!wasDead && enemy.isDead && this.recordEnemyKill(enemy)) {
                     parts.push(`${targetName} 被击倒`);
                 }
             }
@@ -990,6 +1022,15 @@ export class BattlePlaceholderManager extends Component {
         return card;
     }
 
+    private recordEnemyKill(enemy: EnemyInstance): boolean {
+        if (this._countedDeadEnemyUids.has(enemy.uid)) {
+            return false;
+        }
+        this._countedDeadEnemyUids.add(enemy.uid);
+        this._killCountThisBattle += 1;
+        return true;
+    }
+
     private losePlayerHp(amount: number): number {
         const ch = this.ensureSelectedCharacter();
         const hpLoss = Math.min(ch.hp, Math.max(0, amount));
@@ -1021,6 +1062,7 @@ export class BattlePlaceholderManager extends Component {
         }
         this._state = 'victory';
         this._finalRunSettlement = GlobalData.instance.isFinalMapEncounter();
+        GlobalData.instance.recordBattleVictory(this._killCountThisBattle);
         if (this._finalRunSettlement) {
             GlobalData.instance.finishRunTimer();
         }
@@ -1047,6 +1089,8 @@ export class BattlePlaceholderManager extends Component {
             return;
         }
         this._state = 'defeat';
+        this._finalRunSettlement = true;
+        GlobalData.instance.recordBattleDefeat(this._killCountThisBattle);
         this.pushLog('生命归零，战斗失败。');
         this.refreshAll();
         this.showSettlement('defeat');
@@ -1071,43 +1115,51 @@ export class BattlePlaceholderManager extends Component {
         const panel = new Node('SettlementPanel');
         overlay.addChild(panel);
         const pUt = panel.addComponent(UITransform);
-        pUt.setContentSize(560, 300);
+        pUt.setContentSize(640, 360);
         const pG = panel.addComponent(Graphics);
-        paintRoundRect(pG, 560, 300, new Color(30, 36, 48, 250), new Color(184, 155, 92, 255), 3);
+        paintRoundRect(pG, 640, 360, new Color(30, 36, 48, 250), new Color(184, 155, 92, 255), 3);
 
-        const title = this.addLabel(panel, 'Title', 500, 56, 0, 96, 38, result === 'victory' ? new Color(255, 218, 120, 255) : new Color(255, 130, 120, 255));
+        const title = this.addLabel(panel, 'Title', 560, 56, 0, 124, 38, result === 'victory' ? new Color(255, 218, 120, 255) : new Color(255, 130, 120, 255));
         title.string = result === 'victory' ? '战斗胜利' : '战斗失败';
 
-        const desc = this.addLabel(panel, 'Desc', 500, 90, 0, 22, 22, new Color(230, 236, 246, 255));
-        desc.lineHeight = 30;
+        const desc = this.addLabel(panel, 'Desc', 560, 158, 0, 24, 20, new Color(230, 236, 246, 255));
+        desc.lineHeight = 27;
         desc.string = result === 'victory'
             ? `结算奖励：${this._rewardGold} 金币\n当前金币：${this.ensureSelectedCharacter().gold}\n当前生命：${this.ensureSelectedCharacter().hp}/${this.ensureSelectedCharacter().maxHp}`
-            : '本轮 MVP 暂不进入死亡结算，可返回地图继续调试流程。';
+            : this.runSettlementText('本局失败');
 
         if (this._finalRunSettlement && result === 'victory') {
             title.string = '通关结算';
-            desc.string = `已完成地图最后一环\n总用时：${GlobalData.instance.getRunElapsedText()}\n生命：${this.ensureSelectedCharacter().hp}/${this.ensureSelectedCharacter().maxHp}    金币：${this.ensureSelectedCharacter().gold}`;
+            desc.string = this.runSettlementText('已完成地图最后一环');
         }
 
         const btn = new Node('BackToMap');
         panel.addChild(btn);
-        btn.setPosition(0, -92, 0);
+        btn.setPosition(0, -120, 0);
         const bUt = btn.addComponent(UITransform);
         bUt.setContentSize(280, 56);
         const bG = btn.addComponent(Graphics);
         paintRoundRect(bG, 280, 56, new Color(78, 108, 138, 255), new Color(170, 215, 255, 255));
         const bLb = this.addLabel(btn, 'Label', 250, 48, 0, 0, 22, new Color(245, 250, 255, 255));
-        bLb.string = result === 'victory' ? '领取奖励，返回地图' : '返回地图';
+        bLb.string = result === 'victory' ? '领取奖励，返回地图' : '返回主菜单';
         if (this._finalRunSettlement && result === 'victory') {
             bLb.string = '完成本局，返回主菜单';
         }
         btn.on(Node.EventType.TOUCH_END, () => this.exitSettlement(), this);
     }
 
+    private runSettlementText(prefix: string): string {
+        const gd = GlobalData.instance;
+        const ch = this.ensureSelectedCharacter();
+        const resultText = gd.runResult === 'victory' ? '胜利' : gd.runResult === 'defeat' ? '失败' : '进行中';
+        return `${prefix}\n结果：${resultText}    总用时：${gd.getRunElapsedText()}\n到达节点：${gd.mapCurrentNodeId}    牌组：${gd.deckIds.length || gd.deckCount} 张\n战斗胜场：${gd.runBattlesWon}    败场：${gd.runBattlesLost}    击杀：${gd.runEnemiesKilled}\n生命：${ch.hp}/${ch.maxHp}    金币：${ch.gold}`;
+    }
+
     private exitSettlement(): void {
         if (this._finalRunSettlement) {
             GlobalData.instance.clearPendingEncounter();
             RunHudManager.stopRun();
+            GlobalAudioManager.stopBgm();
             director.loadScene(SCENE_MAIN_MENU, (err) => {
                 if (err) {
                     console.error('[BattlePlaceholderManager] 返回主菜单失败', err);
@@ -1227,6 +1279,30 @@ export class BattlePlaceholderManager extends Component {
             const shadow = this._activeShadow ? SHADOW_NAME[this._activeShadow] : '无';
             this._energyLabel.string = `能量 ${this._energy.current}/${this._energy.perTurn}  虚影 ${shadow}`;
         }
+        this.refreshShadowArt();
+    }
+
+    private refreshShadowArt(): void {
+        const sprite = this._shadowSprite;
+        const label = this._shadowLabel;
+        if (!sprite || !label) {
+            return;
+        }
+        const shadow = this._activeShadow;
+        label.string = shadow ? SHADOW_NAME[shadow] : '无虚影';
+        const artPath = shadow ? SHADOW_ART[shadow] : undefined;
+        if (!artPath) {
+            sprite.node.active = false;
+            return;
+        }
+        const expected = artPath;
+        sprite.node.active = true;
+        loadSpriteFrame(artPath).then((sf) => {
+            if (!sf || !sprite.node.isValid || this._activeShadow !== shadow || SHADOW_ART[shadow] !== expected) {
+                return;
+            }
+            sprite.spriteFrame = sf;
+        });
     }
 
     private refreshEnemyViews(): void {
@@ -1317,6 +1393,8 @@ export class BattlePlaceholderManager extends Component {
             const stroke = canPlay ? new Color(86, 60, 40, 255) : new Color(82, 78, 74, 255);
             paintRoundRect(g, cardW, cardH, fill, stroke);
 
+            this.renderCardArt(n, def, cardW, cardH, canPlay);
+
             this.addLabel(n, 'Cost', 36, 32, -cardW * 0.5 + 28, cardH * 0.5 - 26, 22, new Color(32, 42, 54, 255)).string = `${cost}`;
             const nameLb = this.addLabel(n, 'Name', cardW - 54, 32, 18, cardH * 0.5 - 28, 20, new Color(42, 33, 24, 255));
             nameLb.string = def.name;
@@ -1333,6 +1411,38 @@ export class BattlePlaceholderManager extends Component {
             }
             n.on(Node.EventType.TOUCH_END, () => this.tryPlayCard(index), this);
         });
+    }
+
+    private renderCardArt(parent: Node, def: CardDef, cardW: number, cardH: number, enabled: boolean): void {
+        if (!def.artPath) {
+            return;
+        }
+        const art = new Node('CardArt');
+        parent.addChild(art);
+        art.setSiblingIndex(1);
+        art.setPosition(0, 44, 0);
+        const ut = art.addComponent(UITransform);
+        ut.setContentSize(cardW - 24, 88);
+        const sp = art.addComponent(Sprite);
+        sp.sizeMode = Sprite.SizeMode.CUSTOM;
+        sp.color = new Color(255, 255, 255, enabled ? 230 : 120);
+        loadSpriteFrame(def.artPath).then((sf) => {
+            if (!sf || !art.isValid) {
+                return;
+            }
+            sp.spriteFrame = sf;
+        });
+
+        const shade = new Node('CardArtShade');
+        parent.addChild(shade);
+        shade.setSiblingIndex(2);
+        shade.setPosition(0, 44, 0);
+        const shadeUt = shade.addComponent(UITransform);
+        shadeUt.setContentSize(cardW - 24, 88);
+        const g = shade.addComponent(Graphics);
+        g.fillColor = new Color(0, 0, 0, enabled ? 28 : 96);
+        g.roundRect(-(cardW - 24) * 0.5, -44, cardW - 24, 88, 5);
+        g.fill();
     }
 
     private cardTypeLabel(def: CardDef): string {
