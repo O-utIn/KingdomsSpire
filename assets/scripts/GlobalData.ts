@@ -30,6 +30,8 @@ export class GlobalData {
     public potionIds: string[] = [];
     public shopRemovalCount: number = 0;
     public runHudCenterText: string = '';
+    public runStartedAtMs: number = 0;
+    public runEndedAtMs: number = 0;
 
     /** 地图进入战斗前写入，战斗场景用它决定怪物组和奖励 */
     public pendingEncounterKind: CombatEncounterKind = '';
@@ -56,6 +58,41 @@ export class GlobalData {
         this.shopRemovalCount = 0;
         this.resolvedMapNodeIds = [];
         this.runHudCenterText = '';
+        this.startRunTimer();
+    }
+
+    public startRunTimer(): void {
+        this.runStartedAtMs = Date.now();
+        this.runEndedAtMs = 0;
+    }
+
+    public finishRunTimer(): void {
+        if (this.runStartedAtMs > 0 && this.runEndedAtMs <= 0) {
+            this.runEndedAtMs = Date.now();
+        }
+    }
+
+    public getRunElapsedMs(): number {
+        if (this.runStartedAtMs <= 0) {
+            return 0;
+        }
+        return Math.max(0, (this.runEndedAtMs || Date.now()) - this.runStartedAtMs);
+    }
+
+    public getRunElapsedText(): string {
+        const totalSeconds = Math.floor(this.getRunElapsedMs() / 1000);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        const pad = (value: number) => value.toString().padStart(2, '0');
+        return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
+    }
+
+    public isFinalMapEncounter(nodeId = this.pendingEncounterNodeId): boolean {
+        return nodeId >= 0
+            && nodeId === this.mapCurrentNodeId
+            && this.mapPathNodeIds.length > 1
+            && this.pendingEncounterKind === 'boss';
     }
 
     public prepareEncounter(kind: CombatEncounterKind, nodeId: number): void {

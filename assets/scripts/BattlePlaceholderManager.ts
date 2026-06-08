@@ -15,7 +15,7 @@ import {
     view,
     Widget,
 } from 'cc';
-import { SCENE_GAME_MAP } from './GameConfig';
+import { SCENE_GAME_MAP, SCENE_MAIN_MENU } from './GameConfig';
 import { GlobalData } from './GlobalData';
 import type { CharacterPackage, CombatEncounterKind } from './GlobalData';
 import { getRelicDefs, getStarterRelicsForCharacter } from './relics/RelicDef';
@@ -137,6 +137,11 @@ export class BattlePlaceholderManager extends Component {
     private _nextTurnEnergyCapBonus = 0;
     private _firstDescentCoverUsedThisTurn = false;
     private _hasTacticalTerrain = false;
+    private _playerVulnerableTurns = 0;
+    private _playerFrailTurns = 0;
+    private _zhouyuFlameLevel = 0;
+    private _zhouyuFlameGrowthThisTurn = 0;
+    private _finalRunSettlement = false;
 
     private _playerHpLabel: Label | null = null;
     private _playerBlockLabel: Label | null = null;
@@ -199,6 +204,11 @@ export class BattlePlaceholderManager extends Component {
         this._nextTurnEnergyCapBonus = 0;
         this._firstDescentCoverUsedThisTurn = false;
         this._hasTacticalTerrain = false;
+        this._playerVulnerableTurns = 0;
+        this._playerFrailTurns = 0;
+        this._zhouyuFlameLevel = 0;
+        this._zhouyuFlameGrowthThisTurn = 0;
+        this._finalRunSettlement = false;
         this._logLines.length = 0;
         this.pushLog(`进入${encounterTitle(this._encounterKind)}。`);
     }
@@ -215,7 +225,9 @@ export class BattlePlaceholderManager extends Component {
 
     private createEncounterEnemyIds(kind: CombatEncounterKind, nodeId: number): EnemyId[] {
         if (kind === 'boss') {
-            return Math.abs(nodeId) % 2 === 0 ? ['cao_cao_warlord'] : ['zhouyu_grand_duke'];
+            return Math.abs(nodeId + GlobalData.instance.selectedCharId) % 2 === 0
+                ? ['cao_cao_warlord']
+                : ['zhouyu_grand_duke'];
         }
         if (kind === 'elite') {
             return Math.abs(nodeId) % 2 === 0 ? ['xiahoudun_blind'] : ['ganning_raider'];
@@ -585,6 +597,7 @@ export class BattlePlaceholderManager extends Component {
     }
 
     private runEnemyTurn(): void {
+        this._zhouyuFlameGrowthThisTurn = 0;
         for (const enemy of this._enemies) {
             if (!enemy.isDead) {
                 enemy.block = 0;
@@ -637,6 +650,18 @@ export class BattlePlaceholderManager extends Component {
                 this.pushLog(`${name} 将 ${intent.statusCards} 加入战斗压力（状态牌效果待接入）。`);
             }
 
+            if (intent?.playerVulnerable) {
+                this._playerVulnerableTurns = Math.max(this._playerVulnerableTurns, intent.playerVulnerable + 1);
+                this.pushLog('曹操施加虚弱：下一次敌方回合受到的伤害提高 50%。');
+            }
+            if (intent?.playerFrail) {
+                this._playerFrailTurns = Math.max(this._playerFrailTurns, intent.playerFrail + 1);
+                this.pushLog('周瑜施加铁索：下一回合获得的格挡降低 25%。');
+            }
+            if (intent?.flameGrowth) {
+                this._zhouyuFlameGrowthThisTurn += intent.flameGrowth;
+            }
+
             enemy.advanceIntent();
             if (this.ensureSelectedCharacter().hp <= 0) {
                 this.finishDefeat();
@@ -644,7 +669,31 @@ export class BattlePlaceholderManager extends Component {
             }
         }
 
+        this.applyBossPassives();
+        if (this.ensureSelectedCharacter().hp <= 0) {
+            this.finishDefeat();
+            return;
+        }
+        this._playerVulnerableTurns = Math.max(0, this._playerVulnerableTurns - 1);
+        this._playerFrailTurns = Math.max(0, this._playerFrailTurns - 1);
         this.startPlayerTurn();
+    }
+
+    private applyBossPassives(): void {
+        const caoCao = this._enemies.find((enemy) => enemy.defId === 'cao_cao_warlord' && !enemy.isDead);
+        if (caoCao && !this._activeShadow) {
+            const before = caoCao.currentHp;
+            caoCao.heal(3);
+            caoCao.addBlock(2);
+            this.pushLog(`曹操发动“宁我负人”：恢复 ${caoCao.currentHp - before} 点生命并获得 2 点格挡。`);
+        }
+
+        const zhouYu = this._enemies.find((enemy) => enemy.defId === 'zhouyu_grand_duke' && !enemy.isDead);
+        if (zhouYu) {
+            this._zhouyuFlameLevel = Math.min(4, this._zhouyuFlameLevel + 1 + this._zhouyuFlameGrowthThisTurn);
+            const hpLoss = this.losePlayerHp(this._zhouyuFlameLevel);
+            this.pushLog(`周瑜借东风，业火提升至 ${this._zhouyuFlameLevel} 层并造成 ${hpLoss} 点生命流失。`);
+        }
     }
 
     private summonEnemies(ids: readonly EnemyId[], limitPerId = 2): number {
@@ -833,7 +882,8 @@ export class BattlePlaceholderManager extends Component {
         if (!def.forcesShadowLeave && this._activeShadow === 'wushuang') {
             return 0;
         }
-        return def.block ?? 0;
+        const block = def.block ?? 0;
+        return this._playerFrailTurns > 0 ? Math.floor(block * 0.75) : block;
     }
 
     private effectiveDraw(def: CardDef): number {
@@ -949,7 +999,7 @@ export class BattlePlaceholderManager extends Component {
 
     private damagePlayer(amount: number): number {
         const ch = this.ensureSelectedCharacter();
-        let remaining = Math.max(0, amount);
+        let remaining = Math.max(0, this._playerVulnerableTurns > 0 ? Math.ceil(amount * 1.5) : amount);
         if (this._playerBlock > 0) {
             const absorbed = Math.min(this._playerBlock, remaining);
             this._playerBlock -= absorbed;
@@ -970,6 +1020,10 @@ export class BattlePlaceholderManager extends Component {
             return;
         }
         this._state = 'victory';
+        this._finalRunSettlement = GlobalData.instance.isFinalMapEncounter();
+        if (this._finalRunSettlement) {
+            GlobalData.instance.finishRunTimer();
+        }
         this._flow.discardAllHand();
         const kind = this._encounterKind || 'monster';
         this._rewardGold = REWARD_GOLD[kind as Exclude<CombatEncounterKind, ''>] ?? REWARD_GOLD.monster;
@@ -1030,6 +1084,11 @@ export class BattlePlaceholderManager extends Component {
             ? `结算奖励：${this._rewardGold} 金币\n当前金币：${this.ensureSelectedCharacter().gold}\n当前生命：${this.ensureSelectedCharacter().hp}/${this.ensureSelectedCharacter().maxHp}`
             : '本轮 MVP 暂不进入死亡结算，可返回地图继续调试流程。';
 
+        if (this._finalRunSettlement && result === 'victory') {
+            title.string = '通关结算';
+            desc.string = `已完成地图最后一环\n总用时：${GlobalData.instance.getRunElapsedText()}\n生命：${this.ensureSelectedCharacter().hp}/${this.ensureSelectedCharacter().maxHp}    金币：${this.ensureSelectedCharacter().gold}`;
+        }
+
         const btn = new Node('BackToMap');
         panel.addChild(btn);
         btn.setPosition(0, -92, 0);
@@ -1039,7 +1098,24 @@ export class BattlePlaceholderManager extends Component {
         paintRoundRect(bG, 280, 56, new Color(78, 108, 138, 255), new Color(170, 215, 255, 255));
         const bLb = this.addLabel(btn, 'Label', 250, 48, 0, 0, 22, new Color(245, 250, 255, 255));
         bLb.string = result === 'victory' ? '领取奖励，返回地图' : '返回地图';
-        btn.on(Node.EventType.TOUCH_END, () => this.backToMap(), this);
+        if (this._finalRunSettlement && result === 'victory') {
+            bLb.string = '完成本局，返回主菜单';
+        }
+        btn.on(Node.EventType.TOUCH_END, () => this.exitSettlement(), this);
+    }
+
+    private exitSettlement(): void {
+        if (this._finalRunSettlement) {
+            GlobalData.instance.clearPendingEncounter();
+            RunHudManager.stopRun();
+            director.loadScene(SCENE_MAIN_MENU, (err) => {
+                if (err) {
+                    console.error('[BattlePlaceholderManager] 返回主菜单失败', err);
+                }
+            });
+            return;
+        }
+        this.backToMap();
     }
 
     private backToMap(): void {

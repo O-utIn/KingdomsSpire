@@ -131,10 +131,8 @@ export class RunHudManager extends Component {
         const ch = gd.selectedChar;
         const left = ch ? `❤ ${ch.hp}/${ch.maxHp}     金币 ${ch.gold}` : '';
         const center = gd.runHudCenterText;
-        const now = new Date();
-        const pad = (x: number) => (x < 10 ? `0${x}` : `${x}`);
-        const right = `◷ ${pad(now.getHours())}:${pad(now.getMinutes())}     牌组 ${gd.deckCount}`;
-        const text = `${left}|${center}|${right}`;
+        const elapsedRight = `用时 ${gd.getRunElapsedText()}     牌组 ${gd.deckCount}`;
+        const text = `${left}|${center}|${elapsedRight}`;
         if (text === this._lastText) {
             return;
         }
@@ -147,7 +145,7 @@ export class RunHudManager extends Component {
             this._centerLabel.string = center;
         }
         if (this._rightLabel) {
-            this._rightLabel.string = right;
+            this._rightLabel.string = elapsedRight;
         }
     }
 

@@ -14,6 +14,9 @@ export interface EnemyIntentDef {
     /** 暂未完整实现状态系统的效果，先进入战斗记录，便于调试体验节奏 */
     playerDebuff?: string;
     statusCards?: string;
+    playerVulnerable?: number;
+    playerFrail?: number;
+    flameGrowth?: number;
 }
 
 export interface EnemyDef {
@@ -69,77 +72,77 @@ const DEFS: Record<EnemyId, EnemyDef> = {
     xiahoudun_blind: {
         id: 'xiahoudun_blind',
         name: '盲目·夏侯惇',
-        maxHp: 85,
+        maxHp: 55,
         faction: 'wei',
         tier: 'elite',
         role: '第一层精英，检验爆发输出与防守节奏',
         passive: '拔矢啖睛：受到虚影常驻或离场伤害时获得力量（当前版本以数值定位保留）',
         intents: [
-            { label: '激怒：获得 2 力量和 8 格挡', strength: 2, block: 8 },
-            { label: '重劈：造成 14 点伤害', damage: 14 },
-            { label: '狂乱：造成 5 点伤害，攻击 3 次', damage: 5, hits: 3 },
-            { label: '休整：获得 12 格挡，并施加 2 层脆弱', block: 12, playerDebuff: '脆弱 2' },
+            { label: '激怒：获得 1 力量和 5 格挡', strength: 1, block: 5 },
+            { label: '重劈：造成 9 点伤害', damage: 9 },
+            { label: '狂乱：造成 3 点伤害，攻击 3 次', damage: 3, hits: 3 },
+            { label: '休整：获得 7 格挡，并施加 1 层脆弱', block: 7, playerDebuff: '脆弱 1' },
         ],
     },
     tiger_leopard_rider: {
         id: 'tiger_leopard_rider',
         name: '虎豹骑',
-        maxHp: 20,
+        maxHp: 10,
         faction: 'wei',
         tier: 'minion',
         role: '曹操召唤物，持续制造小额伤害压力',
         intents: [
-            { label: '突击：造成 6 点伤害', damage: 6 },
+            { label: '突击：造成 2 点伤害', damage: 2 },
         ],
     },
     cao_cao_warlord: {
         id: 'cao_cao_warlord',
         name: '乱世奸雄·曹操',
-        maxHp: 240,
+        maxHp: 100,
         artPath: 'textures/chars/cao_cao_warlord2',
         faction: 'wei',
         tier: 'boss',
         role: '第一层 Boss，检验 AOE 清理能力和状态保持',
-        passive: '宁我负人：玩家场上没有虚影时回复并净化（当前版本以数值定位保留）',
+        passive: '宁我负人：玩家场上没有虚影时，回合结束恢复 3 点生命并获得 2 点格挡',
         intents: [
             {
-                label: '号令虎豹：召唤 2 名虎豹骑；若已满员则全体魏军获得 2 力量',
-                summons: ['tiger_leopard_rider', 'tiger_leopard_rider'],
+                label: '号令虎豹：召唤 1 名虎豹骑；若已满员则全体魏军获得 1 力量',
+                summons: ['tiger_leopard_rider'],
                 summonLimitPerId: 2,
-                strength: 2,
+                strength: 1,
             },
-            { label: '倚天剑击：造成 12 点伤害，并塞入 1 张伤口', damage: 12, statusCards: '伤口 1' },
-            { label: '挟天子：造成 20 点伤害，并施加 1 层虚弱', damage: 20, playerDebuff: '虚弱 1' },
-            { label: '倚天剑击：造成 12 点伤害，并塞入 1 张伤口', damage: 12, statusCards: '伤口 1' },
+            { label: '倚天剑击：造成 6 点伤害，并塞入 1 张伤口', damage: 6, statusCards: '伤口 1' },
+            { label: '挟天子：造成 9 点伤害，并施加 1 层虚弱', damage: 9, playerDebuff: '虚弱 1', playerVulnerable: 1 },
+            { label: '倚天剑击：造成 6 点伤害，并塞入 1 张伤口', damage: 6, statusCards: '伤口 1' },
         ],
     },
     ganning_raider: {
         id: 'ganning_raider',
         name: '锦帆贼·甘宁',
-        maxHp: 130,
+        maxHp: 65,
         faction: 'wu',
         tier: 'elite',
         role: '第二层精英，检验手牌运转效率和爆发窗口',
         passive: '游侠铃铛：玩家额外抽牌时获得格挡（当前版本以数值定位保留）',
         intents: [
-            { label: '百骑劫营：造成 6 点伤害，攻击 2 次，并偷走最左手牌', damage: 6, hits: 2, statusCards: '偷牌 1' },
-            { label: '连斩：造成 8 点伤害，攻击 3 次', damage: 8, hits: 3 },
-            { label: '嘲笑：施加 2 层虚弱和 2 层脆弱', playerDebuff: '虚弱 2 / 脆弱 2' },
+            { label: '百骑劫营：造成 4 点伤害，攻击 2 次，并偷走最左手牌', damage: 4, hits: 2, statusCards: '偷牌 1' },
+            { label: '连斩：造成 4 点伤害，攻击 3 次', damage: 4, hits: 3 },
+            { label: '嘲笑：施加 1 层虚弱和 1 层脆弱', playerDebuff: '虚弱 1 / 脆弱 1' },
         ],
     },
     zhouyu_grand_duke: {
         id: 'zhouyu_grand_duke',
         name: '大都督·周瑜',
-        maxHp: 320,
+        maxHp: 105,
         artPath: 'textures/chars/zhouyu_grand_duke2',
         faction: 'wu',
         tier: 'boss',
         role: '第二层 Boss，检验成型速度和极限生存',
-        passive: '借东风：回合结束时升级弃牌堆灼伤（当前版本以数值定位保留）',
+        passive: '借东风：回合结束时业火提升并造成递增生命流失，最高提升至 4 层',
         intents: [
-            { label: '火烧赤壁：造成 10 点伤害，塞入 2 张灼伤', damage: 10, statusCards: '灼伤 2' },
-            { label: '苦肉连环：获得 20 格挡，塞入 1 张铁索', block: 20, statusCards: '铁索 1' },
-            { label: '业火滔天：造成 6 点伤害，攻击 5 次', damage: 6, hits: 5 },
+            { label: '火烧赤壁：造成 5 点伤害，塞入 2 张灼伤', damage: 5, statusCards: '灼伤 2', flameGrowth: 1 },
+            { label: '苦肉连环：获得 5 格挡，塞入 1 张铁索', block: 5, statusCards: '铁索 1', playerFrail: 1 },
+            { label: '业火滔天：造成 2 点伤害，攻击 4 次', damage: 2, hits: 4 },
         ],
     },
 };
