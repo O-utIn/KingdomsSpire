@@ -23,7 +23,7 @@ import { SCENE_BATTLE, SCENE_EVENT } from './GameConfig';
 import { GlobalAudioManager } from './GlobalAudioManager';
 import { GlobalData } from './GlobalData';
 import { RunHudManager } from './RunHudManager';
-import type { CardId } from './cards/CardDef';
+import type { CardDef, CardId } from './cards/CardDef';
 import { getCardDef } from './cards/CardDef';
 import type { RelicId } from './relics/RelicDef';
 import { getRelicDef } from './relics/RelicDef';
@@ -749,17 +749,21 @@ export class MapScreenManager extends Component {
             return true;
         };
 
-        const cardItems = [
-            { node: 'ShopC1', title: '重击', id: SHOP_CARD_ID, cost: 2, price: 49, x: -520, y: 178, art: 'textures/cards/bash', sale: false },
-            { node: 'ShopC2', title: '完美打击', id: SHOP_CARD_ID, cost: 2, price: 24, x: -310, y: 178, art: 'textures/cards/perfected_strike', sale: true },
-            { node: 'ShopC3', title: '生存者', id: SHOP_SKILL_CARD_ID, cost: 1, price: 74, x: -100, y: 178, art: 'textures/cards/survivor', sale: false },
-            { node: 'ShopC4', title: '破灭', id: SHOP_CARD_ID, cost: 1, price: 50, x: 110, y: 178, art: 'textures/cards/bash', sale: false },
-            { node: 'ShopC5', title: '惊逃', id: SHOP_SKILL_CARD_ID, cost: 2, price: 77, x: 320, y: 178, art: 'textures/cards/survivor', sale: false },
-            { node: 'ShopC6', title: '净化', id: SHOP_SKILL_CARD_ID, cost: 0, price: 89, x: -420, y: -170, art: 'textures/cards/cleanse', sale: false },
-            { node: 'ShopC7', title: '狠揍', id: SHOP_CARD_ID, cost: 3, price: 168, x: -190, y: -170, art: 'textures/cards/perfected_strike', sale: false },
+        const cardItems: { node: string; id: CardId; price: number; x: number; y: number; sale: boolean }[] = [
+            { node: 'ShopC1', id: 'bash', price: 49, x: -520, y: 178, sale: false },
+            { node: 'ShopC2', id: 'survivor', price: 74, x: -310, y: 178, sale: false },
+            { node: 'ShopC3', id: 'bridge_break', price: 68, x: -100, y: 178, sale: false },
+            { node: 'ShopC4', id: 'blood_rite', price: 82, x: 110, y: 178, sale: false },
+            { node: 'ShopC5', id: 'tactical_terrain', price: 96, x: 320, y: 178, sale: false },
+            { node: 'ShopC6', id: 'scheme', price: 64, x: -420, y: -170, sale: false },
+            { node: 'ShopC7', id: 'descent_wusheng', price: 110, x: -190, y: -170, sale: false },
         ];
         for (const item of cardItems) {
-            await this.makeShopBoardCard(panel, item.node, item.title, item.cost, item.price, item.x, item.y, item.art, item.sale, () => buyCard(item.id, item.title, item.price), !resolved);
+            const def = getCardDef(item.id);
+            if (!def) {
+                continue;
+            }
+            await this.makeShopBoardCard(panel, item.node, def, item.price, item.x, item.y, item.sale, () => buyCard(item.id, def.name, item.price), !resolved);
         }
 
         const relicItems: { node: string; id: RelicId; price: number; x: number; y: number }[] = [
@@ -1314,28 +1318,35 @@ export class MapScreenManager extends Component {
         await this.addSpriteFromPath(bg, 'ShopRugFull', SHOP_RUG_FULL, 1760, 990, 28, -20, new Color(142, 196, 166, 255));
     }
 
+    private shopCardDescription(description: string): string {
+        const compact = description.replace(/\s+/g, '');
+        return compact.length > 44 ? `${compact.slice(0, 43)}…` : compact;
+    }
+
     private async makeShopBoardCard(
         parent: Node,
         name: string,
-        title: string,
-        cost: number,
+        def: CardDef,
         price: number,
         x: number,
         y: number,
-        artPath: string,
         sale: boolean,
         onBuy: () => boolean,
         enabled: boolean,
     ): Promise<void> {
+        const title = def.name;
+        const cost = def.cost;
+        const artPath = def.artPath ?? ICON.shop;
         const slot = new Node(name);
         parent.addChild(slot);
         slot.setPosition(x, y, 0);
         const ut = slot.addComponent(UITransform);
         ut.setContentSize(170, 286);
         const frame = slot.addComponent(Graphics);
-        const isSkill = title.includes('生存') || title.includes('净化');
-        paintRoundRect(frame, 162, 236, isSkill ? new Color(72, 96, 111, 255) : new Color(126, 62, 49, 255), new Color(188, 126, 86, 255), 3);
-        frame.fillColor = isSkill ? new Color(102, 190, 210, 255) : new Color(185, 84, 57, 255);
+        const isSkill = def.type === 'skill';
+        const isPower = def.type === 'power';
+        paintRoundRect(frame, 162, 236, isPower ? new Color(82, 64, 118, 255) : isSkill ? new Color(72, 96, 111, 255) : new Color(126, 62, 49, 255), new Color(188, 126, 86, 255), 3);
+        frame.fillColor = isPower ? new Color(136, 88, 176, 255) : isSkill ? new Color(102, 190, 210, 255) : new Color(185, 84, 57, 255);
         frame.roundRect(-68, 80, 136, 30, 7);
         frame.fill();
         frame.fillColor = new Color(42, 40, 38, 238);
@@ -1357,14 +1368,10 @@ export class MapScreenManager extends Component {
         orb.stroke();
         this.addModalLabel(costOrb, 'CostText', 28, 28, 0, 0, 20, new Color(255, 238, 170, 255), Label.HorizontalAlign.CENTER).string = `${cost}`;
         this.addModalLabel(slot, 'CardTitle', 116, 28, 10, 98, 19, new Color(255, 238, 210, 255), Label.HorizontalAlign.CENTER).string = title;
-        const desc = title.includes('生存')
-            ? '获得 8 点格挡。'
-            : title.includes('净化')
-                ? '保留，消耗。'
-                : '造成 8 点伤害。';
         const descLb = this.addModalLabel(slot, 'CardDesc', 112, 62, 0, -52, 15, new Color(230, 225, 212, 255), Label.HorizontalAlign.CENTER);
         descLb.lineHeight = 19;
-        descLb.string = desc;
+        descLb.overflow = Label.Overflow.SHRINK;
+        descLb.string = this.shopCardDescription(def.description);
         if (sale) {
             const tag = new Node('SaleTag');
             slot.addChild(tag);

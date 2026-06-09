@@ -37,7 +37,7 @@ const { ccclass } = _decorator;
 
 type BattleState = 'player' | 'enemy' | 'victory' | 'defeat';
 
-const RANDOM_DESCENT_IDS: CardId[] = ['descent_wusheng', 'descent_wolong', 'descent_wushuang'];
+const DESCENT_CYCLE_IDS: CardId[] = ['descent_wusheng', 'descent_wolong', 'descent_wushuang'];
 
 const SHADOW_NAME: Record<ShadowId, string> = {
     spirit: '虚影',
@@ -52,7 +52,7 @@ const SHADOW_ART: Partial<Record<ShadowId, string>> = {
     wushuang: 'textures/chars/Phantom/zhaoyun',
 };
 
-const CARD_DESCRIPTION_LINE_COLUMNS = 8;
+const CARD_DESCRIPTION_LINE_COLUMNS = 9;
 
 interface EnemyView {
     enemy: EnemyInstance;
@@ -150,6 +150,7 @@ export class BattlePlaceholderManager extends Component {
     private _zhouyuFlameGrowthThisTurn = 0;
     private _finalRunSettlement = false;
     private _killCountThisBattle = 0;
+    private _nextDescentCycleIndex = 0;
     private readonly _countedDeadEnemyUids = new Set<number>();
 
     private _playerHpLabel: Label | null = null;
@@ -222,6 +223,7 @@ export class BattlePlaceholderManager extends Component {
         this._zhouyuFlameGrowthThisTurn = 0;
         this._finalRunSettlement = false;
         this._killCountThisBattle = 0;
+        this._nextDescentCycleIndex = 0;
         this._countedDeadEnemyUids.clear();
         this._logLines.length = 0;
         this.pushLog(`进入${encounterTitle(this._encounterKind)}。`);
@@ -622,6 +624,7 @@ export class BattlePlaceholderManager extends Component {
             return;
         }
         this._state = 'enemy';
+        this.leaveShadow(true, '回合结束');
         this._flow.discardAllHand();
         this.pushLog('结束回合，弃掉所有手牌。');
         this.runEnemyTurn();
@@ -867,13 +870,13 @@ export class BattlePlaceholderManager extends Component {
         }
 
         if (def.createsRandomDescent) {
-            const created = this.createRandomDescentCard();
+            const created = this.createNextDescentCard();
             parts.push(`生成「${getCardDef(created.defId)?.name ?? created.defId}」`);
         }
 
         if (def.grantsPower === 'tactical_terrain') {
             this._hasTacticalTerrain = true;
-            parts.push('兵要地势常驻');
+            parts.push('兵势险要常驻');
         }
 
         if (def.descentShadow) {
@@ -978,6 +981,8 @@ export class BattlePlaceholderManager extends Component {
         } else if (shadow === 'wushuang') {
             this._nextTurnEnergyCapBonus += 2;
             this.pushLog('无双离场：下回合能量上限 +2。');
+        } else {
+            this.pushLog('虚影离场。');
         }
     }
 
@@ -986,7 +991,7 @@ export class BattlePlaceholderManager extends Component {
             return;
         }
         if (this._flow.hand.length === 0) {
-            this.pushLog(`兵要地势因${source}触发，但没有手牌可弃。`);
+            this.pushLog(`兵势险要因${source}触发，但没有手牌可弃。`);
             return;
         }
         const discarded = this._flow.hand[0];
@@ -994,7 +999,7 @@ export class BattlePlaceholderManager extends Component {
         this._flow.discardFromHand(0);
         this._energy.add(1);
         const drawn = this._flow.draw(1).length;
-        this.pushLog(`兵要地势触发，弃掉「${discardedName}」，获得 1 能量并抽 ${drawn} 张牌。`);
+        this.pushLog(`兵势险要触发，弃掉「${discardedName}」，获得 1 能量并抽 ${drawn} 张牌。`);
     }
 
     private reduceDescentCostsInHand(): number {
@@ -1014,8 +1019,9 @@ export class BattlePlaceholderManager extends Component {
         return changed;
     }
 
-    private createRandomDescentCard(): CardInstance {
-        const id = RANDOM_DESCENT_IDS[Math.floor(Math.random() * RANDOM_DESCENT_IDS.length)] ?? RANDOM_DESCENT_IDS[0];
+    private createNextDescentCard(): CardInstance {
+        const id = DESCENT_CYCLE_IDS[this._nextDescentCycleIndex % DESCENT_CYCLE_IDS.length] ?? DESCENT_CYCLE_IDS[0];
+        this._nextDescentCycleIndex = (this._nextDescentCycleIndex + 1) % DESCENT_CYCLE_IDS.length;
         const card = createCardInstance(id);
         card.temporaryCost = 0;
         this._flow.addToHand(card);
@@ -1400,7 +1406,7 @@ export class BattlePlaceholderManager extends Component {
             nameLb.string = def.name;
             nameLb.isBold = true;
 
-            const typeLb = this.addLabel(n, 'Type', cardW - 28, 28, 0, 30, 16, new Color(78, 62, 46, 255));
+            const typeLb = this.addLabel(n, 'Type', cardW - 28, 22, 0, 1, 14, new Color(78, 62, 46, 255));
             typeLb.overflow = Label.Overflow.SHRINK;
             typeLb.string = this.cardTypeLabel(def);
 
@@ -1417,12 +1423,14 @@ export class BattlePlaceholderManager extends Component {
         if (!def.artPath) {
             return;
         }
+        const artY = 50;
+        const artH = 66;
         const art = new Node('CardArt');
         parent.addChild(art);
         art.setSiblingIndex(1);
-        art.setPosition(0, 44, 0);
+        art.setPosition(0, artY, 0);
         const ut = art.addComponent(UITransform);
-        ut.setContentSize(cardW - 24, 88);
+        ut.setContentSize(cardW - 24, artH);
         const sp = art.addComponent(Sprite);
         sp.sizeMode = Sprite.SizeMode.CUSTOM;
         sp.color = new Color(255, 255, 255, enabled ? 230 : 120);
@@ -1436,12 +1444,12 @@ export class BattlePlaceholderManager extends Component {
         const shade = new Node('CardArtShade');
         parent.addChild(shade);
         shade.setSiblingIndex(2);
-        shade.setPosition(0, 44, 0);
+        shade.setPosition(0, artY, 0);
         const shadeUt = shade.addComponent(UITransform);
-        shadeUt.setContentSize(cardW - 24, 88);
+        shadeUt.setContentSize(cardW - 24, artH);
         const g = shade.addComponent(Graphics);
         g.fillColor = new Color(0, 0, 0, enabled ? 28 : 96);
-        g.roundRect(-(cardW - 24) * 0.5, -44, cardW - 24, 88, 5);
+        g.roundRect(-(cardW - 24) * 0.5, -artH * 0.5, cardW - 24, artH, 5);
         g.fill();
     }
 
@@ -1520,14 +1528,14 @@ export class BattlePlaceholderManager extends Component {
 
     private renderCardDescription(parent: Node, def: CardDef, cardW: number): void {
         const allLines = this.cardFaceDescription(def).split('\n').filter((line) => line.length > 0);
-        const maxLines = allLines.length >= 6 ? 6 : 5;
+        const maxLines = 5;
         const lines = allLines.slice(0, maxLines);
         if (allLines.length > maxLines && lines.length > 0) {
             lines[lines.length - 1] = `${lines[lines.length - 1].slice(0, Math.max(0, CARD_DESCRIPTION_LINE_COLUMNS - 1))}…`;
         }
         const fontSize = this.cardDescriptionFontSize(lines.length);
-        const lineHeight = Math.ceil(fontSize * 1.22);
-        const topY = 3;
+        const lineHeight = Math.ceil(fontSize * 1.18);
+        const topY = -24;
         lines.forEach((line, index) => {
             const lb = this.addLabel(parent, `Desc_${index}`, cardW - 34, lineHeight + 2, 0, topY - index * lineHeight, fontSize, new Color(42, 34, 25, 255));
             lb.string = line;

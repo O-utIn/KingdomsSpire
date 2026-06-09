@@ -69,7 +69,6 @@ export class DeckPreviewManager extends Component {
         this.hide();
         const root = this._root?.isValid ? this._root : director.getScene()?.getChildByName(PREVIEW_ROOT_NAME);
         if (root?.isValid) {
-            director.removePersistRootNode(root);
             root.destroy();
         }
         this._root = null;
@@ -111,7 +110,6 @@ export class DeckPreviewManager extends Component {
             const canvas = root.addComponent(Canvas);
             canvas.cameraComponent = cam;
             canvas.alignCanvasWithScreen = true;
-            director.addPersistRootNode(root);
         }
         this._root = root;
         this._instance = root.getComponent(DeckPreviewManager) ?? root.addComponent(DeckPreviewManager);
@@ -146,6 +144,9 @@ export class DeckPreviewManager extends Component {
     }
 
     private openPreview(): void {
+        if (!this.node?.isValid) {
+            return;
+        }
         this.closePreview();
         const vs = view.getVisibleSize();
         const overlay = new Node('DeckPreviewOverlay');
@@ -208,6 +209,7 @@ export class DeckPreviewManager extends Component {
 
     private closePreview(): void {
         if (this._overlay?.isValid) {
+            this._overlay.removeFromParent();
             this._overlay.destroy();
         }
         this._overlay = null;

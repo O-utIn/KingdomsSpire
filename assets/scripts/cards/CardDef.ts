@@ -160,7 +160,7 @@ const DEFS: Record<CardId, CardDef> = {
     },
     tactical_terrain: {
         id: 'tactical_terrain',
-        name: '兵要地势',
+        name: '兵势险要',
         cost: 2,
         type: 'power',
         description: '能力：虚影离场时自动弃 1 张手牌，获得 1 能量并抽 1 张牌。',
