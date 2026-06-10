@@ -163,6 +163,9 @@ export class BattlePlaceholderManager extends Component {
     private _relicTooltip: Node | null = null;
     private _relicTooltipTitle: Label | null = null;
     private _relicTooltipDesc: Label | null = null;
+    private _cardTooltip: Node | null = null;
+    private _cardTooltipTitle: Label | null = null;
+    private _cardTooltipDesc: Label | null = null;
     private _enemyViews: EnemyView[] = [];
 
     async start(): Promise<void> {
@@ -267,6 +270,9 @@ export class BattlePlaceholderManager extends Component {
         this._relicTooltip = null;
         this._relicTooltipTitle = null;
         this._relicTooltipDesc = null;
+        this._cardTooltip = null;
+        this._cardTooltipTitle = null;
+        this._cardTooltipDesc = null;
 
         const vs = view.getVisibleSize();
         await this.buildBackground(vs.width, vs.height);
@@ -1366,6 +1372,7 @@ export class BattlePlaceholderManager extends Component {
         if (!root) {
             return;
         }
+        this.hideCardTooltip();
         for (const child of [...root.children]) {
             child.destroy();
         }
@@ -1415,6 +1422,8 @@ export class BattlePlaceholderManager extends Component {
             if (def.exhaustsOnPlay) {
                 this.addLabel(n, 'Exhaust', cardW - 28, 18, 0, -cardH * 0.5 + 13, 13, new Color(120, 52, 42, 255)).string = '消耗';
             }
+            n.on(Node.EventType.MOUSE_ENTER, () => this.showCardTooltip(def, n), this);
+            n.on(Node.EventType.MOUSE_LEAVE, () => this.hideCardTooltip(), this);
             n.on(Node.EventType.TOUCH_END, () => this.tryPlayCard(index), this);
         });
     }
@@ -1473,12 +1482,33 @@ export class BattlePlaceholderManager extends Component {
     }
 
     private cardFaceDescription(def: CardDef): string {
+        const descentSummary = this.descentCardSummary(def);
+        if (descentSummary) {
+            return descentSummary;
+        }
         const text = def.description
             .replace(/：/g, '：\n')
             .replace(/。/g, '。\n')
             .replace(/\n+/g, '\n')
             .trim();
         return this.wrapCardDescription(text);
+    }
+
+    private descentCardSummary(def: CardDef): string | null {
+        if (def.id === 'descent_wusheng') {
+            return '降临：群伤 12\n常驻：攻击变群体，伤害 +2\n离场：获得 1 力量';
+        }
+        if (def.id === 'descent_wolong') {
+            return '降临：抽 2 张牌\n常驻：技能使手中降临费用 -1\n离场：获得 5 格挡';
+        }
+        if (def.id === 'descent_wushuang') {
+            return '降临：单体伤害 28\n常驻：格挡牌变攻击，数值 +5\n离场：下回合能量上限 +2';
+        }
+        return null;
+    }
+
+    private cardFullDescription(def: CardDef): string {
+        return this.descentCardSummary(def) ?? def.description;
     }
 
     private wrapCardDescription(text: string): string {
@@ -1544,6 +1574,54 @@ export class BattlePlaceholderManager extends Component {
             lb.enableWrapText = false;
             lb.overflow = Label.Overflow.SHRINK;
         });
+    }
+
+    private showCardTooltip(def: CardDef, cardNode: Node): void {
+        const tooltip = this.ensureCardTooltip();
+        const world = cardNode.worldPosition;
+        const local = this.node.getComponent(UITransform)?.convertToNodeSpaceAR(world) ?? world;
+        tooltip.setPosition(local.x, local.y + 220, 0);
+        tooltip.active = true;
+        tooltip.setSiblingIndex(this.node.children.length - 1);
+        if (this._cardTooltipTitle) {
+            this._cardTooltipTitle.string = `${def.name}  ·  ${def.cost} 费`;
+        }
+        if (this._cardTooltipDesc) {
+            this._cardTooltipDesc.string = this.cardFullDescription(def);
+        }
+    }
+
+    private hideCardTooltip(): void {
+        if (this._cardTooltip) {
+            this._cardTooltip.active = false;
+        }
+    }
+
+    private ensureCardTooltip(): Node {
+        if (this._cardTooltip?.isValid) {
+            return this._cardTooltip;
+        }
+        const tooltipW = 390;
+        const tooltipH = 170;
+        const tooltip = new Node('CardTooltip');
+        this.node.addChild(tooltip);
+        tooltip.active = false;
+        tooltip.addComponent(UITransform).setContentSize(tooltipW, tooltipH);
+        const g = tooltip.addComponent(Graphics);
+        paintRoundRect(g, tooltipW, tooltipH, new Color(18, 22, 30, 248), new Color(214, 176, 96, 255), 3);
+
+        this._cardTooltipTitle = this.addLabel(tooltip, 'Title', tooltipW - 32, 32, 0, 58, 22, new Color(255, 218, 128, 255));
+        this._cardTooltipTitle.horizontalAlign = Label.HorizontalAlign.LEFT;
+        this._cardTooltipTitle.isBold = true;
+        this._cardTooltipDesc = this.addLabel(tooltip, 'Desc', tooltipW - 32, 108, 0, -24, 17, new Color(225, 232, 244, 255));
+        this._cardTooltipDesc.horizontalAlign = Label.HorizontalAlign.LEFT;
+        this._cardTooltipDesc.verticalAlign = Label.VerticalAlign.TOP;
+        this._cardTooltipDesc.lineHeight = 25;
+        this._cardTooltipDesc.overflow = Label.Overflow.CLAMP;
+        this._cardTooltipDesc.enableWrapText = true;
+
+        this._cardTooltip = tooltip;
+        return tooltip;
     }
 
     private isMultiTargetAttack(def: CardDef): boolean {
