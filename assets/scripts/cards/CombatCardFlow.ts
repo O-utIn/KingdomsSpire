@@ -1,4 +1,4 @@
-import type { CardDef } from './CardDef';
+import type { CardDef, CardId } from './CardDef';
 import { getCardDef } from './CardDef';
 import type { CardInstance } from './CardInstance';
 
@@ -71,6 +71,22 @@ export class CombatCardFlow {
         this.hand.push(card);
     }
 
+    addToDrawPile(card: CardInstance): void {
+        const index = Math.floor(Math.random() * (this.drawPile.length + 1));
+        this.drawPile.splice(index, 0, card);
+    }
+
+    upgradeDiscardCards(fromDefId: CardId, toDefId: CardId): number {
+        let upgraded = 0;
+        for (const card of this.discardPile) {
+            if (card.defId === fromDefId) {
+                card.upgradeDefinition(toDefId);
+                upgraded += 1;
+            }
+        }
+        return upgraded;
+    }
+
     resetTemporaryCosts(): void {
         const zones = [this.hand, this.drawPile, this.discardPile, this.exhaustPile];
         for (const zone of zones) {
@@ -115,6 +131,11 @@ export class CombatCardFlow {
     discardAllHand(): void {
         while (this.hand.length > 0) {
             const c = this.hand.pop()!;
+            const def = getCardDef(c.defId);
+            if (def?.exhaustsAtEndOfTurn) {
+                this.exhaustPile.push(c);
+                continue;
+            }
             c.resetDefinition();
             this.discardPile.push(c);
         }

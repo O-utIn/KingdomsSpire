@@ -1,5 +1,13 @@
+import type { CardId } from '../cards/CardDef';
+
 /** 怪物配置 id，与数据表主键一致 */
 export type EnemyId = string;
+
+export interface EnemyStatusCardAddition {
+    cardId: CardId;
+    count: number;
+    destination: 'drawPile' | 'hand';
+}
 
 export interface EnemyIntentDef {
     label: string;
@@ -14,9 +22,9 @@ export interface EnemyIntentDef {
     /** 暂未完整实现状态系统的效果，先进入战斗记录，便于调试体验节奏 */
     playerDebuff?: string;
     statusCards?: string;
+    addsStatusCards?: EnemyStatusCardAddition[];
     playerVulnerable?: number;
     playerFrail?: number;
-    flameGrowth?: number;
 }
 
 export interface EnemyDef {
@@ -138,10 +146,10 @@ const DEFS: Record<EnemyId, EnemyDef> = {
         faction: 'wu',
         tier: 'boss',
         role: '第二层 Boss，检验成型速度和极限生存',
-        passive: '借东风：回合结束时业火提升并造成递增生命流失，最高提升至 4 层',
+        passive: '借东风：周瑜回合结束时，将玩家弃牌堆中的灼伤升级为灼伤+',
         intents: [
-            { label: '火烧赤壁：造成 5 点伤害，塞入 2 张灼伤', damage: 5, statusCards: '灼伤 2', flameGrowth: 1 },
-            { label: '苦肉连环：获得 5 格挡，塞入 1 张铁索', block: 5, statusCards: '铁索 1', playerFrail: 1 },
+            { label: '火烧赤壁：造成 5 点伤害，塞入 2 张灼伤', damage: 5, addsStatusCards: [{ cardId: 'burn', count: 2, destination: 'drawPile' }] },
+            { label: '苦肉连环：获得 5 格挡，塞入 1 张铁索', block: 5, addsStatusCards: [{ cardId: 'iron_chain', count: 1, destination: 'hand' }] },
             { label: '业火滔天：造成 2 点伤害，攻击 4 次', damage: 2, hits: 4 },
         ],
     },

@@ -1,6 +1,6 @@
 /** 卡牌配置 id，与数据表主键一致 */
 export type CardId = string;
-export type CardType = 'attack' | 'skill' | 'power';
+export type CardType = 'attack' | 'skill' | 'power' | 'status';
 export type ShadowId = 'spirit' | 'wusheng' | 'wolong' | 'wushuang';
 export type PowerId = 'tactical_terrain';
 
@@ -36,6 +36,14 @@ export interface CardDef {
     grantsPower?: PowerId;
     /** 打出后进入消耗堆而非弃牌堆 */
     exhaustsOnPlay?: boolean;
+    /** 无法由玩家主动打出 */
+    unplayable?: boolean;
+    /** 回合结束时仍在手牌中会直接失去的生命 */
+    endTurnHpLoss?: number;
+    /** 进入手牌时使本回合无法打出降临牌 */
+    blocksDescentInHand?: boolean;
+    /** 回合结束时从手牌进入消耗堆 */
+    exhaustsAtEndOfTurn?: boolean;
 }
 
 const DEFS: Record<CardId, CardDef> = {
@@ -167,6 +175,34 @@ const DEFS: Record<CardId, CardDef> = {
         artPath: 'textures/cards/battle_trance',
         grantsPower: 'tactical_terrain',
         exhaustsOnPlay: true,
+    },
+    burn: {
+        id: 'burn',
+        name: '灼伤',
+        cost: 0,
+        type: 'status',
+        description: '无法打出。回合结束时若在手牌中，失去 2 点生命。',
+        unplayable: true,
+        endTurnHpLoss: 2,
+    },
+    burn_plus: {
+        id: 'burn_plus',
+        name: '灼伤+',
+        cost: 0,
+        type: 'status',
+        description: '无法打出。回合结束时若在手牌中，失去 4 点生命。',
+        unplayable: true,
+        endTurnHpLoss: 4,
+    },
+    iron_chain: {
+        id: 'iron_chain',
+        name: '铁索',
+        cost: 0,
+        type: 'status',
+        description: '进入手牌时，本回合无法打出【降临】牌。回合结束时消耗。',
+        unplayable: true,
+        blocksDescentInHand: true,
+        exhaustsAtEndOfTurn: true,
     },
 };
 

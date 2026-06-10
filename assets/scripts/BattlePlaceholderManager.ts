@@ -29,7 +29,7 @@ import { createCardInstance } from './cards/CardInstance';
 import { CombatCardFlow } from './cards/CombatCardFlow';
 import { CombatEnergyPool } from './cards/CombatEnergyPool';
 import { getStarterDeckForCharacter } from './cards/StarterDeck';
-import type { EnemyId } from './enemies/EnemyDef';
+import type { EnemyId, EnemyStatusCardAddition } from './enemies/EnemyDef';
 import { getEnemyDef } from './enemies/EnemyDef';
 import { createEnemyInstance, EnemyInstance } from './enemies/EnemyInstance';
 
@@ -147,8 +147,7 @@ export class BattlePlaceholderManager extends Component {
     private _hasTacticalTerrain = false;
     private _playerVulnerableTurns = 0;
     private _playerFrailTurns = 0;
-    private _zhouyuFlameLevel = 0;
-    private _zhouyuFlameGrowthThisTurn = 0;
+    private _descentBlockedThisTurn = false;
     private _finalRunSettlement = false;
     private _killCountThisBattle = 0;
     private _nextDescentCycleIndex = 0;
@@ -226,8 +225,7 @@ export class BattlePlaceholderManager extends Component {
         this._hasTacticalTerrain = false;
         this._playerVulnerableTurns = 0;
         this._playerFrailTurns = 0;
-        this._zhouyuFlameLevel = 0;
-        this._zhouyuFlameGrowthThisTurn = 0;
+        this._descentBlockedThisTurn = false;
         this._finalRunSettlement = false;
         this._killCountThisBattle = 0;
         this._nextDescentCycleIndex = 0;
@@ -638,15 +636,20 @@ export class BattlePlaceholderManager extends Component {
         if (this._tacticalTerrainPending) {
             this.resolveTacticalTerrainChoice(null);
         }
+        this.applyHandEndTurnStatusEffects();
+        if (this.ensureSelectedCharacter().hp <= 0) {
+            this.finishDefeat();
+            return;
+        }
         this._state = 'enemy';
         this.leaveShadow(false, '回合结束');
         this._flow.discardAllHand();
+        this._descentBlockedThisTurn = false;
         this.pushLog('结束回合，弃掉所有手牌。');
         this.runEnemyTurn();
     }
 
     private runEnemyTurn(): void {
-        this._zhouyuFlameGrowthThisTurn = 0;
         for (const enemy of this._enemies) {
             if (!enemy.isDead) {
                 enemy.block = 0;
@@ -698,6 +701,9 @@ export class BattlePlaceholderManager extends Component {
             if (intent?.statusCards) {
                 this.pushLog(`${name} 将 ${intent.statusCards} 加入战斗压力（状态牌效果待接入）。`);
             }
+            if (intent?.addsStatusCards?.length) {
+                this.addEnemyStatusCards(name, intent.addsStatusCards);
+            }
 
             if (intent?.playerVulnerable) {
                 this._playerVulnerableTurns = Math.max(this._playerVulnerableTurns, intent.playerVulnerable + 1);
@@ -707,10 +713,6 @@ export class BattlePlaceholderManager extends Component {
                 this._playerFrailTurns = Math.max(this._playerFrailTurns, intent.playerFrail + 1);
                 this.pushLog('周瑜施加铁索：下一回合获得的格挡降低 25%。');
             }
-            if (intent?.flameGrowth) {
-                this._zhouyuFlameGrowthThisTurn += intent.flameGrowth;
-            }
-
             enemy.advanceIntent();
             if (this.ensureSelectedCharacter().hp <= 0) {
                 this.finishDefeat();
@@ -739,10 +741,50 @@ export class BattlePlaceholderManager extends Component {
 
         const zhouYu = this._enemies.find((enemy) => enemy.defId === 'zhouyu_grand_duke' && !enemy.isDead);
         if (zhouYu) {
-            this._zhouyuFlameLevel = Math.min(4, this._zhouyuFlameLevel + 1 + this._zhouyuFlameGrowthThisTurn);
-            const hpLoss = this.losePlayerHp(this._zhouyuFlameLevel);
-            this.pushLog(`周瑜借东风，业火提升至 ${this._zhouyuFlameLevel} 层并造成 ${hpLoss} 点生命流失。`);
+            const upgraded = this._flow.upgradeDiscardCards('burn', 'burn_plus');
+            if (upgraded > 0) {
+                this.pushLog(`周瑜发动“借东风”：弃牌堆中的 ${upgraded} 张灼伤升级为灼伤+。`);
+            }
         }
+    }
+
+    private addEnemyStatusCards(sourceName: string, additions: readonly EnemyStatusCardAddition[]): void {
+        for (const addition of additions) {
+            const def = getCardDef(addition.cardId);
+            if (!def) {
+                continue;
+            }
+            for (let i = 0; i < addition.count; i++) {
+                const card = createCardInstance(addition.cardId);
+                if (addition.destination === 'hand') {
+                    this._flow.addToHand(card);
+                    this.handleStatusCardEnteringHand(card);
+                } else {
+                    this._flow.addToDrawPile(card);
+                }
+            }
+            const destination = addition.destination === 'hand' ? '手牌' : '抽牌堆';
+            this.pushLog(`${sourceName} 将 ${addition.count} 张「${def.name}」塞入你的${destination}。`);
+        }
+    }
+
+    private applyHandEndTurnStatusEffects(): void {
+        let totalHpLoss = 0;
+        const counts = new Map<string, number>();
+        for (const card of this._flow.hand) {
+            const def = getCardDef(card.defId);
+            if (!def?.endTurnHpLoss) {
+                continue;
+            }
+            totalHpLoss += def.endTurnHpLoss;
+            counts.set(def.name, (counts.get(def.name) ?? 0) + 1);
+        }
+        if (totalHpLoss <= 0) {
+            return;
+        }
+        const actualLoss = this.losePlayerHp(totalHpLoss);
+        const sources = [...counts.entries()].map(([name, count]) => `${count} 张${name}`).join('、');
+        this.pushLog(`回合结束，手牌中的${sources}令你失去 ${actualLoss} 点生命。`);
     }
 
     private summonEnemies(ids: readonly EnemyId[], limitPerId = 2): number {
@@ -795,6 +837,16 @@ export class BattlePlaceholderManager extends Component {
         const card = this._flow.hand[handIndex];
         const def = card ? getCardDef(card.defId) : null;
         if (!card || !def) {
+            return;
+        }
+        if (def.unplayable) {
+            this.pushLog(`「${def.name}」无法打出。`);
+            this.refreshAll();
+            return;
+        }
+        if (this._descentBlockedThisTurn && isDescentCard(def)) {
+            this.pushLog('铁索生效，本回合无法打出【降临】牌。');
+            this.refreshAll();
             return;
         }
 
@@ -1062,12 +1114,20 @@ export class BattlePlaceholderManager extends Component {
     }
 
     private prepareDrawnCard(card: CardInstance): void {
-        if (!card.cyclesDescentOnDraw) {
-            return;
+        if (card.cyclesDescentOnDraw) {
+            const id = DESCENT_CYCLE_IDS[this._nextDescentCycleIndex % DESCENT_CYCLE_IDS.length] ?? DESCENT_CYCLE_IDS[0];
+            this._nextDescentCycleIndex = (this._nextDescentCycleIndex + 1) % DESCENT_CYCLE_IDS.length;
+            card.setDefinition(id);
         }
-        const id = DESCENT_CYCLE_IDS[this._nextDescentCycleIndex % DESCENT_CYCLE_IDS.length] ?? DESCENT_CYCLE_IDS[0];
-        this._nextDescentCycleIndex = (this._nextDescentCycleIndex + 1) % DESCENT_CYCLE_IDS.length;
-        card.setDefinition(id);
+        this.handleStatusCardEnteringHand(card);
+    }
+
+    private handleStatusCardEnteringHand(card: CardInstance): void {
+        const def = getCardDef(card.defId);
+        if (def?.blocksDescentInHand && !this._descentBlockedThisTurn) {
+            this._descentBlockedThisTurn = true;
+            this.pushLog(`「${def.name}」生效：本回合无法打出【降临】牌。`);
+        }
     }
 
     private createRandomDescentCard(): CardInstance {
@@ -1452,7 +1512,9 @@ export class BattlePlaceholderManager extends Component {
                 return;
             }
             const cost = this.cardCost(card, def);
-            const canPlay = this._tacticalTerrainPending || (this._state === 'player' && this._energy.current >= cost);
+            const blockedByIronChain = this._descentBlockedThisTurn && isDescentCard(def);
+            const canPlay = this._tacticalTerrainPending
+                || (this._state === 'player' && !def.unplayable && !blockedByIronChain && this._energy.current >= cost);
             const n = new Node(`Card_${card.uid}`);
             root.addChild(n);
             n.setPosition(startX + index * (cardW + gap), 0, 0);
@@ -1534,6 +1596,9 @@ export class BattlePlaceholderManager extends Component {
         }
         if (def.type === 'power') {
             parts.push('能力');
+        }
+        if (def.type === 'status') {
+            parts.push('状态');
         }
         return parts.join(' / ') || (def.type === 'attack' ? '攻击' : '技能');
     }
