@@ -38,6 +38,7 @@ const { ccclass } = _decorator;
 type BattleState = 'player' | 'enemy' | 'victory' | 'defeat';
 
 const DESCENT_CYCLE_IDS: CardId[] = ['descent_wusheng', 'descent_wolong', 'descent_wushuang'];
+const RANDOM_DESCENT_IDS: CardId[] = ['descent_wusheng', 'descent_wolong', 'descent_wushuang'];
 
 const SHADOW_NAME: Record<ShadowId, string> = {
     spirit: '虚影',
@@ -151,6 +152,8 @@ export class BattlePlaceholderManager extends Component {
     private _finalRunSettlement = false;
     private _killCountThisBattle = 0;
     private _nextDescentCycleIndex = 0;
+    private _tacticalTerrainPending = false;
+    private _tacticalTerrainSource = '';
     private readonly _countedDeadEnemyUids = new Set<number>();
 
     private _playerHpLabel: Label | null = null;
@@ -211,7 +214,8 @@ export class BattlePlaceholderManager extends Component {
         const deckIds = gd.deckIds.length > 0 ? gd.deckIds : getStarterDeckForCharacter(gd.selectedCharId);
         gd.deckIds = [...deckIds];
         gd.deckCount = deckIds.length;
-        const deck = deckIds.map((id) => createCardInstance(id));
+        const deck = deckIds.map((id) => createCardInstance(id, id === 'descent'));
+        this._flow.onBeforeDraw = (card) => this.prepareDrawnCard(card);
         this._flow.resetCombat(deck);
         this._energy.perTurn = 3;
         this._firstHpLossImmuneReady = this.relicDefs().some((relic) => !!relic.effects.firstHpLossImmune);
@@ -227,6 +231,8 @@ export class BattlePlaceholderManager extends Component {
         this._finalRunSettlement = false;
         this._killCountThisBattle = 0;
         this._nextDescentCycleIndex = 0;
+        this._tacticalTerrainPending = false;
+        this._tacticalTerrainSource = '';
         this._countedDeadEnemyUids.clear();
         this._logLines.length = 0;
         this.pushLog(`进入${encounterTitle(this._encounterKind)}。`);
@@ -629,8 +635,11 @@ export class BattlePlaceholderManager extends Component {
         if (this._state !== 'player') {
             return;
         }
+        if (this._tacticalTerrainPending) {
+            this.resolveTacticalTerrainChoice(null);
+        }
         this._state = 'enemy';
-        this.leaveShadow(true, '回合结束');
+        this.leaveShadow(false, '回合结束');
         this._flow.discardAllHand();
         this.pushLog('结束回合，弃掉所有手牌。');
         this.runEnemyTurn();
@@ -779,6 +788,10 @@ export class BattlePlaceholderManager extends Component {
         if (this._state !== 'player') {
             return;
         }
+        if (this._tacticalTerrainPending) {
+            this.resolveTacticalTerrainChoice(handIndex);
+            return;
+        }
         const card = this._flow.hand[handIndex];
         const def = card ? getCardDef(card.defId) : null;
         if (!card || !def) {
@@ -831,7 +844,7 @@ export class BattlePlaceholderManager extends Component {
 
         if (def.forcesShadowLeave) {
             if (this._activeShadow) {
-                this.leaveShadow(true, '过河拆桥');
+                this.leaveShadow(false, '过河拆桥');
                 parts.push('强制虚影离场');
             } else {
                 parts.push('当前没有虚影');
@@ -876,7 +889,7 @@ export class BattlePlaceholderManager extends Component {
         }
 
         if (def.createsRandomDescent) {
-            const created = this.createNextDescentCard();
+            const created = this.createRandomDescentCard();
             parts.push(`生成「${getCardDef(created.defId)?.name ?? created.defId}」`);
         }
 
@@ -965,14 +978,14 @@ export class BattlePlaceholderManager extends Component {
         }
     }
 
-    private leaveShadow(isReplacement: boolean, source: string): void {
+    private leaveShadow(triggersTacticalTerrain: boolean, source: string): void {
         const leaving = this._activeShadow;
         if (!leaving) {
             return;
         }
         this._activeShadow = null;
         this.applyShadowLeaveEffect(leaving);
-        if (isReplacement) {
+        if (triggersTacticalTerrain) {
             this.triggerTacticalTerrain(source);
         }
     }
@@ -1000,12 +1013,35 @@ export class BattlePlaceholderManager extends Component {
             this.pushLog(`兵势险要因${source}触发，但没有手牌可弃。`);
             return;
         }
-        const discarded = this._flow.hand[0];
+        this._tacticalTerrainPending = true;
+        this._tacticalTerrainSource = source;
+        this.pushLog(`兵势险要因${source}触发：请选择一张手牌弃掉，或跳过。`);
+    }
+
+    private resolveTacticalTerrainChoice(handIndex: number | null): void {
+        if (!this._tacticalTerrainPending) {
+            return;
+        }
+        const source = this._tacticalTerrainSource;
+        this._tacticalTerrainPending = false;
+        this._tacticalTerrainSource = '';
+        if (handIndex === null) {
+            this.pushLog(`兵势险要因${source}触发，但你选择了跳过。`);
+            this.refreshAll();
+            return;
+        }
+        const discarded = this._flow.hand[handIndex];
+        if (!discarded) {
+            this.pushLog('兵势险要没有找到可弃的手牌。');
+            this.refreshAll();
+            return;
+        }
         const discardedName = getCardDef(discarded.defId)?.name ?? discarded.defId;
-        this._flow.discardFromHand(0);
+        this._flow.discardFromHand(handIndex);
         this._energy.add(1);
         const drawn = this._flow.draw(1).length;
         this.pushLog(`兵势险要触发，弃掉「${discardedName}」，获得 1 能量并抽 ${drawn} 张牌。`);
+        this.refreshAll();
     }
 
     private reduceDescentCostsInHand(): number {
@@ -1025,9 +1061,17 @@ export class BattlePlaceholderManager extends Component {
         return changed;
     }
 
-    private createNextDescentCard(): CardInstance {
+    private prepareDrawnCard(card: CardInstance): void {
+        if (!card.cyclesDescentOnDraw) {
+            return;
+        }
         const id = DESCENT_CYCLE_IDS[this._nextDescentCycleIndex % DESCENT_CYCLE_IDS.length] ?? DESCENT_CYCLE_IDS[0];
         this._nextDescentCycleIndex = (this._nextDescentCycleIndex + 1) % DESCENT_CYCLE_IDS.length;
+        card.setDefinition(id);
+    }
+
+    private createRandomDescentCard(): CardInstance {
+        const id = RANDOM_DESCENT_IDS[Math.floor(Math.random() * RANDOM_DESCENT_IDS.length)] ?? RANDOM_DESCENT_IDS[0];
         const card = createCardInstance(id);
         card.temporaryCost = 0;
         this._flow.addToHand(card);
@@ -1382,6 +1426,19 @@ export class BattlePlaceholderManager extends Component {
             this.addLabel(root, 'EmptyHand', 520, 40, 0, 0, 22, new Color(215, 222, 232, 255)).string = this._state === 'player' ? '没有手牌' : '';
             return;
         }
+        if (this._tacticalTerrainPending) {
+            const prompt = this.addLabel(root, 'TacticalTerrainPrompt', 520, 30, -80, 137, 18, new Color(255, 224, 140, 255));
+            prompt.string = '兵势险要：点击一张手牌弃掉，或选择跳过';
+            prompt.isBold = true;
+            const skip = new Node('TacticalTerrainSkip');
+            root.addChild(skip);
+            skip.setPosition(310, 137, 0);
+            skip.addComponent(UITransform).setContentSize(110, 34);
+            const skipGraphics = skip.addComponent(Graphics);
+            paintRoundRect(skipGraphics, 110, 34, new Color(88, 96, 112, 245), new Color(205, 176, 96, 255), 2);
+            this.addLabel(skip, 'Label', 96, 28, 0, 0, 16, new Color(245, 248, 252, 255)).string = '跳过';
+            skip.on(Node.EventType.TOUCH_END, () => this.resolveTacticalTerrainChoice(null), this);
+        }
 
         const cardW = 172;
         const cardH = 218;
@@ -1395,7 +1452,7 @@ export class BattlePlaceholderManager extends Component {
                 return;
             }
             const cost = this.cardCost(card, def);
-            const canPlay = this._state === 'player' && this._energy.current >= cost;
+            const canPlay = this._tacticalTerrainPending || (this._state === 'player' && this._energy.current >= cost);
             const n = new Node(`Card_${card.uid}`);
             root.addChild(n);
             n.setPosition(startX + index * (cardW + gap), 0, 0);

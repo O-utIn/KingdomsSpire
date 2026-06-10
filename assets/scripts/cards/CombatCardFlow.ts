@@ -19,6 +19,7 @@ export class CombatCardFlow {
     readonly drawPile: CardInstance[] = [];
     readonly discardPile: CardInstance[] = [];
     readonly exhaustPile: CardInstance[] = [];
+    onBeforeDraw: ((card: CardInstance) => void) | null = null;
 
     /** 用初始卡组重置战斗（拷贝实例引用进抽牌堆并洗牌） */
     resetCombat(masterDeck: CardInstance[]): void {
@@ -49,6 +50,7 @@ export class CombatCardFlow {
         if (!c) {
             return null;
         }
+        this.onBeforeDraw?.(c);
         this.hand.push(c);
         return c;
     }
@@ -92,6 +94,7 @@ export class CombatCardFlow {
         if (def.exhaustsOnPlay) {
             this.exhaustPile.push(c);
         } else {
+            c.resetDefinition();
             this.discardPile.push(c);
         }
         return true;
@@ -103,6 +106,7 @@ export class CombatCardFlow {
         if (!c) {
             return false;
         }
+        c.resetDefinition();
         this.discardPile.push(c);
         return true;
     }
@@ -111,6 +115,7 @@ export class CombatCardFlow {
     discardAllHand(): void {
         while (this.hand.length > 0) {
             const c = this.hand.pop()!;
+            c.resetDefinition();
             this.discardPile.push(c);
         }
     }
