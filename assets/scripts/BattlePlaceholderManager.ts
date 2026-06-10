@@ -1401,19 +1401,19 @@ export class BattlePlaceholderManager extends Component {
 
             this.renderCardArt(n, def, cardW, cardH, canPlay);
 
-            this.addLabel(n, 'Cost', 36, 32, -cardW * 0.5 + 28, cardH * 0.5 - 26, 22, new Color(32, 42, 54, 255)).string = `${cost}`;
-            const nameLb = this.addLabel(n, 'Name', cardW - 54, 32, 18, cardH * 0.5 - 28, 20, new Color(42, 33, 24, 255));
+            this.addLabel(n, 'Cost', 36, 28, -cardW * 0.5 + 28, cardH * 0.5 - 23, 20, new Color(32, 42, 54, 255)).string = `${cost}`;
+            const nameLb = this.addLabel(n, 'Name', cardW - 54, 28, 18, cardH * 0.5 - 23, 19, new Color(42, 33, 24, 255));
             nameLb.string = def.name;
             nameLb.isBold = true;
 
-            const typeLb = this.addLabel(n, 'Type', cardW - 28, 22, 0, 1, 14, new Color(78, 62, 46, 255));
+            const typeLb = this.addLabel(n, 'Type', cardW - 28, 18, 0, 3, 13, new Color(78, 62, 46, 255));
             typeLb.overflow = Label.Overflow.SHRINK;
             typeLb.string = this.cardTypeLabel(def);
 
             this.renderCardDescription(n, def, cardW);
 
             if (def.exhaustsOnPlay) {
-                this.addLabel(n, 'Exhaust', cardW - 28, 24, 0, -cardH * 0.5 + 24, 14, new Color(120, 52, 42, 255)).string = '消耗';
+                this.addLabel(n, 'Exhaust', cardW - 28, 18, 0, -cardH * 0.5 + 13, 13, new Color(120, 52, 42, 255)).string = '消耗';
             }
             n.on(Node.EventType.TOUCH_END, () => this.tryPlayCard(index), this);
         });
@@ -1423,8 +1423,8 @@ export class BattlePlaceholderManager extends Component {
         if (!def.artPath) {
             return;
         }
-        const artY = 50;
-        const artH = 66;
+        const artY = 42;
+        const artH = 52;
         const art = new Node('CardArt');
         parent.addChild(art);
         art.setSiblingIndex(1);
@@ -1528,14 +1528,14 @@ export class BattlePlaceholderManager extends Component {
 
     private renderCardDescription(parent: Node, def: CardDef, cardW: number): void {
         const allLines = this.cardFaceDescription(def).split('\n').filter((line) => line.length > 0);
-        const maxLines = 5;
+        const maxLines = def.exhaustsOnPlay ? 4 : 5;
         const lines = allLines.slice(0, maxLines);
         if (allLines.length > maxLines && lines.length > 0) {
             lines[lines.length - 1] = `${lines[lines.length - 1].slice(0, Math.max(0, CARD_DESCRIPTION_LINE_COLUMNS - 1))}…`;
         }
         const fontSize = this.cardDescriptionFontSize(lines.length);
-        const lineHeight = Math.ceil(fontSize * 1.18);
-        const topY = -24;
+        const lineHeight = Math.ceil(fontSize * 1.1);
+        const topY = -20;
         lines.forEach((line, index) => {
             const lb = this.addLabel(parent, `Desc_${index}`, cardW - 34, lineHeight + 2, 0, topY - index * lineHeight, fontSize, new Color(42, 34, 25, 255));
             lb.string = line;
