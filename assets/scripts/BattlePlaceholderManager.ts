@@ -636,6 +636,7 @@ export class BattlePlaceholderManager extends Component {
         if (this._tacticalTerrainPending) {
             this.resolveTacticalTerrainChoice(null);
         }
+        this._hasTacticalTerrain = false;
         this.applyHandEndTurnStatusEffects();
         if (this.ensureSelectedCharacter().hp <= 0) {
             this.finishDefeat();
@@ -947,7 +948,7 @@ export class BattlePlaceholderManager extends Component {
 
         if (def.grantsPower === 'tactical_terrain') {
             this._hasTacticalTerrain = true;
-            parts.push('兵势险要常驻');
+            parts.push('兵势险要本回合生效');
         }
 
         if (def.descentShadow) {
