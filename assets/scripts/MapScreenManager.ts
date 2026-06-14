@@ -96,19 +96,131 @@ function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
 }
 
-function mapNodeKind(floor: number, random: () => number): MapNodeKind {
-    if (floor === 1) {
-        return 'monster';
+const NODE_KIND_WEIGHT: Partial<Record<MapNodeKind, number>> = {
+    monster: 48,
+    event: 18,
+    rest: 13,
+    shop: 11,
+    elite: 10,
+};
+
+function weightedKind(candidates: readonly MapNodeKind[], floor: number, random: () => number): MapNodeKind {
+    const weight = (kind: MapNodeKind): number => {
+        const base = NODE_KIND_WEIGHT[kind] ?? 0;
+        return kind === 'shop' && floor >= 9 ? base + 7 : base;
+    };
+    const total = candidates.reduce((sum, kind) => sum + weight(kind), 0);
+    let roll = random() * total;
+    for (const kind of candidates) {
+        roll -= weight(kind);
+        if (roll <= 0) {
+            return kind;
+        }
     }
-    if (floor === MAP_PATH_FLOORS) {
-        return 'rest';
+    return candidates[0] ?? 'monster';
+}
+
+function chooseLateRouteShops(graph: GraphNode[], random: () => number): Set<number> {
+    const shopIds = new Set<number>();
+    const routesByEnd = new Map<number, number[][]>();
+    for (const start of graph.filter((node) => node.floor === 12)) {
+        const route: number[] = [];
+        let currentId = start.id;
+        for (let floor = 12; floor <= 14; floor++) {
+            const current = graph[currentId];
+            if (!current || current.floor !== floor) {
+                break;
+            }
+            route.push(currentId);
+            currentId = current.children[0] ?? -1;
+        }
+        const endId = route[route.length - 1];
+        if (endId !== undefined) {
+            const routes = routesByEnd.get(endId) ?? [];
+            routes.push(route);
+            routesByEnd.set(endId, routes);
+        }
     }
-    const roll = random();
-    if (roll < 0.48) return 'monster';
-    if (roll < 0.62) return 'event';
-    if (roll < 0.74) return 'rest';
-    if (roll < 0.86) return 'shop';
-    return 'elite';
+
+    for (const routes of routesByEnd.values()) {
+        const commonIds = routes[0].filter((id) => routes.every((route) => route.includes(id)));
+        if (commonIds.length > 0) {
+            shopIds.add(commonIds[randomInt(0, commonIds.length - 1, random)]);
+        }
+    }
+    return shopIds;
+}
+
+function assignBalancedNodeKinds(graph: GraphNode[], random: () => number): void {
+    graph[0].kind = 'start';
+    const combatStreakById = new Map<number, number>([[0, 0]]);
+    const lateRouteShopIds = chooseLateRouteShops(graph, random);
+    const boss = graph.find((node) => node.floor === MAP_BOSS_FLOOR);
+    if (boss) {
+        boss.kind = 'boss';
+    }
+
+    for (let floor = 1; floor <= MAP_PATH_FLOORS; floor++) {
+        const nodes = graph.filter((node) => node.floor === floor);
+        const counts = new Map<MapNodeKind, number>();
+        for (let i = 0; i < nodes.length; i++) {
+            const node = nodes[i];
+            if (floor === 1) {
+                node.kind = 'monster';
+                combatStreakById.set(node.id, 1);
+                continue;
+            }
+            if (floor === MAP_PATH_FLOORS) {
+                node.kind = 'rest';
+                combatStreakById.set(node.id, 0);
+                continue;
+            }
+            if (lateRouteShopIds.has(node.id)) {
+                node.kind = 'shop';
+                combatStreakById.set(node.id, 0);
+                continue;
+            }
+
+            const parentKinds = new Set(node.parents.map((id) => graph[id]?.kind).filter((kind): kind is MapNodeKind => !!kind));
+            const parentCombatStreak = Math.max(0, ...node.parents.map((id) => combatStreakById.get(id) ?? 0));
+            const candidates: MapNodeKind[] = ['monster', 'event', 'rest', 'shop', 'elite'];
+            const allowed = candidates.filter((kind) => {
+                const isCombat = kind === 'monster' || kind === 'elite';
+                if (floor <= 3 && kind === 'elite') return false;
+                if (floor <= 2 && (kind === 'rest' || kind === 'shop')) return false;
+                if (floor >= 12 && floor <= 14 && kind === 'shop') return false;
+                if (floor === 11 && kind === 'shop' && node.children.some((id) => lateRouteShopIds.has(id))) return false;
+                if (floor === MAP_PATH_FLOORS - 1 && kind === 'rest') return false;
+                if (floor >= MAP_PATH_FLOORS - 1 && kind === 'elite') return false;
+                if ((kind === 'elite' || kind === 'rest' || kind === 'shop' || kind === 'event') && parentKinds.has(kind)) return false;
+                if (isCombat && parentCombatStreak >= 3) return false;
+                if (kind === 'elite' && (counts.get(kind) ?? 0) >= Math.max(1, Math.floor(nodes.length * 0.25))) return false;
+                if (kind === 'shop' && (counts.get(kind) ?? 0) >= (floor >= 9 && nodes.length >= 4 ? 2 : 1)) return false;
+                if (kind === 'rest' && (counts.get(kind) ?? 0) >= Math.max(1, Math.ceil(nodes.length * 0.34))) return false;
+                return true;
+            });
+
+            const remaining = nodes.length - i;
+            let kind: MapNodeKind;
+            const canReserveMonster = (counts.get('monster') ?? 0) > 0 || remaining > 1;
+            if (floor === 7 && (counts.get('rest') ?? 0) === 0 && canReserveMonster && allowed.includes('rest')) {
+                kind = 'rest';
+            } else if (floor === 10 && (counts.get('shop') ?? 0) === 0 && canReserveMonster && allowed.includes('shop')) {
+                kind = 'shop';
+            } else if ((counts.get('monster') ?? 0) === 0 && remaining === 1 && allowed.includes('monster')) {
+                kind = 'monster';
+            } else {
+                const fallback = candidates.filter((candidate) => candidate !== 'event'
+                    && candidate !== 'monster'
+                    && candidate !== 'elite'
+                    && !parentKinds.has(candidate));
+                kind = weightedKind(allowed.length > 0 ? allowed : fallback.length > 0 ? fallback : ['rest'], floor, random);
+            }
+            node.kind = kind;
+            counts.set(kind, (counts.get(kind) ?? 0) + 1);
+            combatStreakById.set(node.id, kind === 'monster' || kind === 'elite' ? parentCombatStreak + 1 : 0);
+        }
+    }
 }
 
 /** 按路径逐层生长地图，避免预先生成完整矩阵和路径交叉。 */
@@ -184,7 +296,7 @@ export function generateMapGraph(random: () => number = Math.random): GraphNode[
             floor: point.y,
             x: (point.x - 4) * MAP_COLUMN_GAP,
             y: (point.y - MAP_BOSS_FLOOR * 0.5) * MAP_FLOOR_GAP,
-            kind: point.y === 0 ? 'start' : point.y === MAP_BOSS_FLOOR ? 'boss' : mapNodeKind(point.y, random),
+            kind: point.y === 0 ? 'start' : point.y === MAP_BOSS_FLOOR ? 'boss' : 'monster',
             parents: [],
             children: [],
         };
@@ -196,12 +308,23 @@ export function generateMapGraph(random: () => number = Math.random): GraphNode[
         graph[fromId].children.push(toId);
         graph[toId].parents.push(fromId);
     }
+    assignBalancedNodeKinds(graph, random);
     return graph;
 }
 
-const MAP_GRAPH: GraphNode[] = generateMapGraph();
+let MAP_GRAPH: GraphNode[] = [];
+let MAX_FLOOR = 0;
+let MAP_GRAPH_GENERATION = -1;
 
-const MAX_FLOOR = Math.max(...MAP_GRAPH.map((n) => n.floor));
+function ensureMapGraphForCurrentRun(): void {
+    const generation = GlobalData.instance.mapGeneration;
+    if (MAP_GRAPH.length > 0 && MAP_GRAPH_GENERATION === generation) {
+        return;
+    }
+    MAP_GRAPH = generateMapGraph();
+    MAX_FLOOR = Math.max(...MAP_GRAPH.map((n) => n.floor));
+    MAP_GRAPH_GENERATION = generation;
+}
 
 const ZOOM_MIN = 0.55;
 const ZOOM_MAX = 1.45;
@@ -340,6 +463,7 @@ export class MapScreenManager extends Component {
     private _modalRoot: Node | null = null;
 
     async start() {
+        ensureMapGraphForCurrentRun();
         this.syncCanvasCameraToScreen();
         if (GlobalData.instance.mapFloorCount <= 0) {
             GlobalData.instance.mapCurrentNodeId = 0;

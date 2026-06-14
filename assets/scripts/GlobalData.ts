@@ -47,10 +47,13 @@ export class GlobalData {
     public mapPathNodeIds: number[] = [0];
     /** 地图总层数（最顶层 floor + 1），HUD 用 */
     public mapFloorCount: number = 0;
+    /** 每次开始新局递增；地图场景据此只在新局时重新生成地图。 */
+    public mapGeneration: number = 0;
     /** 已结算过的非战斗节点，避免反复刷火堆/商店 */
     public resolvedMapNodeIds: number[] = [];
 
     public resetMapProgress(): void {
+        this.mapGeneration += 1;
         this.mapCurrentNodeId = 0;
         this.mapPathNodeIds = [0];
         this.mapFloorCount = 0;
