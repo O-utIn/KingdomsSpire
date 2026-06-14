@@ -30,11 +30,7 @@ import { getRelicDef } from './relics/RelicDef';
 
 const { ccclass } = _decorator;
 
-const MAP_BG_LAYERS = [
-    'textures/spire-codex-ui-map-backgrounds/map_bottom_overgrowth',
-    'textures/spire-codex-ui-map-backgrounds/map_middle_overgrowth',
-    'textures/spire-codex-ui-map-backgrounds/map_top_overgrowth',
-] as const;
+const MAP_BACKGROUND = 'textures/spire-codex-ui-map-backgrounds/map_middle_overgrowth';
 
 const MARKER_BY_CHAR = [
     'textures/spire-codex-ui-map-nodes/map_marker_silent',
@@ -69,36 +65,148 @@ interface GraphNode {
     children: number[];
 }
 
+interface GeneratedPoint {
+    x: number;
+    y: number;
+}
+
+interface GeneratedEdge {
+    from: GeneratedPoint;
+    to: GeneratedPoint;
+}
+
 interface ShopPurchaseBinding {
     buy: (event?: EventTouch | EventMouse) => void;
     button: Node;
     sold: Node;
 }
 
-/** 自下而上分叉 DAG；底层中间为起点，向左右分叉，贴近参考图 */
-const MAP_GRAPH: GraphNode[] = (() => {
-    const y = (f: number) => -430 + f * 138;
-    return [
-        { id: 0, floor: 0, x: 0, y: y(0), kind: 'start', parents: [], children: [1, 2] },
-        { id: 1, floor: 1, x: -190, y: y(1), kind: 'monster', parents: [0], children: [3, 4] },
-        { id: 2, floor: 1, x: 190, y: y(1), kind: 'event', parents: [0], children: [4, 5] },
-        { id: 3, floor: 2, x: -250, y: y(2), kind: 'rest', parents: [1], children: [6] },
-        { id: 4, floor: 2, x: 0, y: y(2), kind: 'monster', parents: [1, 2], children: [6, 7] },
-        { id: 5, floor: 2, x: 250, y: y(2), kind: 'shop', parents: [2], children: [7] },
-        { id: 6, floor: 3, x: -150, y: y(3), kind: 'event', parents: [3, 4], children: [8] },
-        { id: 7, floor: 3, x: 180, y: y(3), kind: 'elite', parents: [4, 5], children: [8, 9] },
-        { id: 8, floor: 4, x: -60, y: y(4), kind: 'monster', parents: [6, 7], children: [10] },
-        { id: 9, floor: 4, x: 160, y: y(4), kind: 'rest', parents: [7], children: [10] },
-        { id: 10, floor: 5, x: 40, y: y(5), kind: 'shop', parents: [8, 9], children: [11] },
-        { id: 11, floor: 6, x: 0, y: y(6), kind: 'boss', parents: [10], children: [] },
-    ];
-})();
+const MAP_COLUMNS = 7;
+const MAP_PATH_FLOORS = 15;
+const MAP_PATH_COUNT = 6;
+const MAP_BOSS_FLOOR = MAP_PATH_FLOORS + 1;
+const MAP_COLUMN_GAP = 178;
+const MAP_FLOOR_GAP = 172;
+
+function randomInt(min: number, max: number, random: () => number): number {
+    return min + Math.floor(random() * (max - min + 1));
+}
+
+function clamp(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+}
+
+function mapNodeKind(floor: number, random: () => number): MapNodeKind {
+    if (floor === 1) {
+        return 'monster';
+    }
+    if (floor === MAP_PATH_FLOORS) {
+        return 'rest';
+    }
+    const roll = random();
+    if (roll < 0.48) return 'monster';
+    if (roll < 0.62) return 'event';
+    if (roll < 0.74) return 'rest';
+    if (roll < 0.86) return 'shop';
+    return 'elite';
+}
+
+/** 按路径逐层生长地图，避免预先生成完整矩阵和路径交叉。 */
+export function generateMapGraph(random: () => number = Math.random): GraphNode[] {
+    const connectionMap = new Map<string, number>();
+    const points = new Map<string, GeneratedPoint>();
+    const edges = new Map<string, GeneratedEdge>();
+    const startXs: number[] = [];
+
+    while (startXs.length < MAP_PATH_COUNT) {
+        const x = randomInt(1, MAP_COLUMNS, random);
+        if (startXs[startXs.length - 1] !== x) {
+            startXs.push(x);
+        }
+    }
+
+    const addPoint = (point: GeneratedPoint): void => {
+        points.set(`${point.y},${point.x}`, point);
+    };
+    const addEdge = (from: GeneratedPoint, to: GeneratedPoint): void => {
+        addPoint(from);
+        addPoint(to);
+        edges.set(`${from.y},${from.x}->${to.y},${to.x}`, { from, to });
+    };
+    const chooseNextX = (currentX: number, floor: number): number => {
+        const existing = connectionMap.get(`${floor},${currentX}`);
+        if (existing !== undefined) {
+            return existing;
+        }
+        const leftX = clamp(currentX - 1, 1, MAP_COLUMNS);
+        const rightX = clamp(currentX + 1, 1, MAP_COLUMNS);
+        let minX = leftX;
+        let maxX = rightX;
+        const leftConnectedX = connectionMap.get(`${floor},${leftX}`);
+        const rightConnectedX = connectionMap.get(`${floor},${rightX}`);
+        if (leftConnectedX !== undefined) {
+            minX = Math.max(minX, leftConnectedX);
+        }
+        if (rightConnectedX !== undefined) {
+            maxX = Math.min(maxX, rightConnectedX);
+        }
+        return randomInt(clamp(minX, 1, MAP_COLUMNS), clamp(maxX, 1, MAP_COLUMNS), random);
+    };
+
+    for (const startX of startXs) {
+        let currentX = startX;
+        addPoint({ x: currentX, y: 1 });
+        for (let floor = 1; floor < MAP_PATH_FLOORS; floor++) {
+            const nextX = chooseNextX(currentX, floor);
+            addEdge({ x: currentX, y: floor }, { x: nextX, y: floor + 1 });
+            connectionMap.set(`${floor},${currentX}`, nextX);
+            currentX = nextX;
+        }
+    }
+
+    const startPoint = { x: 4, y: 0 };
+    const bossPoint = { x: 4, y: MAP_BOSS_FLOOR };
+    for (const startX of new Set(startXs)) {
+        addEdge(startPoint, { x: startX, y: 1 });
+    }
+    for (const point of points.values()) {
+        if (point.y === MAP_PATH_FLOORS) {
+            addEdge(point, bossPoint);
+        }
+    }
+
+    const orderedPoints = [...points.values()].sort((a, b) => a.y - b.y || a.x - b.x);
+    const idByPoint = new Map<string, number>();
+    const graph = orderedPoints.map((point, id): GraphNode => {
+        idByPoint.set(`${point.y},${point.x}`, id);
+        return {
+            id,
+            floor: point.y,
+            x: (point.x - 4) * MAP_COLUMN_GAP,
+            y: (point.y - MAP_BOSS_FLOOR * 0.5) * MAP_FLOOR_GAP,
+            kind: point.y === 0 ? 'start' : point.y === MAP_BOSS_FLOOR ? 'boss' : mapNodeKind(point.y, random),
+            parents: [],
+            children: [],
+        };
+    });
+    for (const edge of edges.values()) {
+        const fromId = idByPoint.get(`${edge.from.y},${edge.from.x}`);
+        const toId = idByPoint.get(`${edge.to.y},${edge.to.x}`);
+        if (fromId === undefined || toId === undefined) continue;
+        graph[fromId].children.push(toId);
+        graph[toId].parents.push(fromId);
+    }
+    return graph;
+}
+
+const MAP_GRAPH: GraphNode[] = generateMapGraph();
 
 const MAX_FLOOR = Math.max(...MAP_GRAPH.map((n) => n.floor));
 
-const ZOOM_MIN = 0.45;
-const ZOOM_MAX = 2.4;
+const ZOOM_MIN = 0.55;
+const ZOOM_MAX = 1.45;
 const ZOOM_WHEEL_STEP = 0.09;
+const MAP_INITIAL_SCALE = 0.86;
 const CAMPFIRE_REST_RATIO = 0.3;
 const SHOP_CARD_ID: CardId = 'bash';
 const SHOP_SKILL_CARD_ID: CardId = 'survivor';
@@ -220,6 +328,9 @@ export class MapScreenManager extends Component {
     private _mapScale = 1;
     private _lastPinchDist = 0;
     private readonly _touchUiPos = new Map<number, Vec2>();
+    private _lastDragUiPos: Vec2 | null = null;
+    private _mouseDragUiPos: Vec2 | null = null;
+    private _mapWasDragged = false;
     private _wrapById: (Node | undefined)[] = [];
     private _glowById: (Sprite | undefined)[] = [];
     private _ringGfxById: (Graphics | undefined)[] = [];
@@ -240,6 +351,8 @@ export class MapScreenManager extends Component {
         this.refreshRunHud();
         /** 先铺地图再叠 UI，避免 MapContent 盖住顶栏（参考图层次） */
         await this.buildMapVisuals();
+        this.setMapScale(MAP_INITIAL_SCALE);
+        this.centerMapOnNode(GlobalData.instance.mapCurrentNodeId);
         await this.buildLegendWithIcons();
         this.syncCanvasCameraToScreen();
         this.redrawEdgeLines();
@@ -254,6 +367,10 @@ export class MapScreenManager extends Component {
             return;
         }
         root.off(Node.EventType.MOUSE_WHEEL, this.onMapMouseWheel, this);
+        root.off(Node.EventType.MOUSE_DOWN, this.onMapMouseDown, this);
+        root.off(Node.EventType.MOUSE_MOVE, this.onMapMouseMove, this);
+        root.off(Node.EventType.MOUSE_UP, this.onMapMouseUp, this);
+        root.off(Node.EventType.MOUSE_LEAVE, this.onMapMouseUp, this);
         root.off(Node.EventType.TOUCH_START, this.onMapTouchStart, this);
         root.off(Node.EventType.TOUCH_MOVE, this.onMapTouchMove, this);
         root.off(Node.EventType.TOUCH_END, this.onMapTouchEnd, this);
@@ -276,12 +393,12 @@ export class MapScreenManager extends Component {
         const panel = new Node('MapLegend');
         this.node.addChild(panel);
         const ut = panel.addComponent(UITransform);
-        ut.setContentSize(240, 400);
+        ut.setContentSize(166, 286);
         ut.anchorPoint.set(1, 0.5);
         const wg = panel.addComponent(Widget);
         wg.isAlignRight = true;
         wg.isAlignVerticalCenter = true;
-        wg.right = 8;
+        wg.right = 16;
         wg.verticalCenter = 20;
         wg.updateAlignment();
 
@@ -289,37 +406,37 @@ export class MapScreenManager extends Component {
         panel.addChild(bg);
         bg.setSiblingIndex(0);
         const bgUt = bg.addComponent(UITransform);
-        bgUt.setContentSize(228, 380);
+        bgUt.setContentSize(158, 276);
         bgUt.anchorPoint.set(0.5, 0.5);
-        bg.setPosition(-20, 0, 0);
+        bg.setPosition(-4, 0, 0);
         const bgG = bg.addComponent(Graphics);
-        bgG.fillColor = new Color(40, 55, 72, 170);
-        bgG.roundRect(-114, -190, 228, 380, 8);
+        bgG.fillColor = new Color(25, 32, 42, 125);
+        bgG.roundRect(-79, -138, 158, 276, 12);
         bgG.fill();
 
         const title = new Node('Title');
         panel.addChild(title);
         const tUt = title.addComponent(UITransform);
-        tUt.setContentSize(200, 32);
-        title.setPosition(-30, 168, 0);
+        tUt.setContentSize(130, 28);
+        title.setPosition(-10, 116, 0);
         const tLb = title.addComponent(Label);
         tLb.string = '图例';
-        tLb.fontSize = 22;
+        tLb.fontSize = 18;
         tLb.isBold = true;
         tLb.color = new Color(230, 235, 245, 255);
 
-        let y = 120;
+        let y = 78;
         for (const row of LEGEND_ROWS) {
             const sf = await loadSpriteFrame(row.path);
             const rowN = new Node(`Leg_${row.text}`);
             panel.addChild(rowN);
-            rowN.setPosition(-140, y, 0);
-            y -= 44;
+            rowN.setPosition(-68, y, 0);
+            y -= 36;
             if (sf) {
                 const ic = new Node('Ic');
                 rowN.addChild(ic);
                 const iUt = ic.addComponent(UITransform);
-                iUt.setContentSize(36, 36);
+                iUt.setContentSize(28, 28);
                 ic.setPosition(0, 0, 0);
                 const iSp = ic.addComponent(Sprite);
                 iSp.spriteFrame = sf;
@@ -327,12 +444,12 @@ export class MapScreenManager extends Component {
             }
             const lbN = new Node('Txt');
             rowN.addChild(lbN);
-            lbN.setPosition(52, 0, 0);
+            lbN.setPosition(38, 0, 0);
             const lbUt = lbN.addComponent(UITransform);
-            lbUt.setContentSize(140, 36);
+            lbUt.setContentSize(92, 30);
             const lb = lbN.addComponent(Label);
             lb.string = row.text;
-            lb.fontSize = 18;
+            lb.fontSize = 15;
             lb.color = new Color(220, 228, 240, 255);
             lb.horizontalAlign = 0;
         }
@@ -345,8 +462,8 @@ export class MapScreenManager extends Component {
         ut.setContentSize(vsW, vsH);
         ut.anchorPoint.set(0.5, 0.5);
         const g = n.addComponent(Graphics);
-        g.lineWidth = 3.2;
-        g.strokeColor = new Color(88, 96, 112, 200);
+        g.lineWidth = 4.5;
+        g.strokeColor = new Color(75, 62, 52, 220);
         return g;
     }
 
@@ -357,7 +474,7 @@ export class MapScreenManager extends Component {
         ut.setContentSize(vsW, vsH);
         ut.anchorPoint.set(0.5, 0.5);
         const g = n.addComponent(Graphics);
-        g.lineWidth = 11;
+        g.lineWidth = 8;
         g.strokeColor = new Color(235, 85, 150, 235);
         return g;
     }
@@ -368,13 +485,13 @@ export class MapScreenManager extends Component {
             return;
         }
         g.clear();
-        g.lineWidth = 3.2;
-        g.strokeColor = new Color(88, 96, 112, 200);
+        g.lineWidth = 4.5;
+        g.strokeColor = new Color(75, 62, 52, 220);
         for (const n of MAP_GRAPH) {
             const a = graphPos(n.id);
             for (const cid of n.children) {
                 const b = graphPos(cid);
-                strokeDashedLine(g, a.x, a.y, b.x, b.y, 9, 6);
+                strokeDashedLine(g, a.x, a.y, b.x, b.y, 13, 7);
             }
         }
     }
@@ -389,7 +506,7 @@ export class MapScreenManager extends Component {
         if (path.length < 2) {
             return;
         }
-        g.lineWidth = 11;
+        g.lineWidth = 8;
         g.strokeColor = new Color(235, 85, 150, 235);
         const p0 = graphPos(path[0]);
         g.moveTo(p0.x, p0.y);
@@ -424,22 +541,16 @@ export class MapScreenManager extends Component {
 
         this.bindMapZoomInput(root);
 
-        const bgH = innerH / MAP_BG_LAYERS.length;
-        for (let i = 0; i < MAP_BG_LAYERS.length; i++) {
-            const path = MAP_BG_LAYERS[i];
-            const sf = await loadSpriteFrame(path);
-            if (!sf) {
-                continue;
-            }
-            const n = new Node(`Bg_${i}`);
-            zoomRoot.addChild(n);
+        const backgroundSf = await loadSpriteFrame(MAP_BACKGROUND);
+        if (backgroundSf) {
+            const n = new Node('MapBackground');
+            root.addChild(n);
+            n.setSiblingIndex(0);
             const ut = n.addComponent(UITransform);
-            ut.setContentSize(vs.width + 8, bgH + 4);
+            ut.setContentSize(vs.width + 8, innerH + 4);
             ut.anchorPoint.set(0.5, 0.5);
-            const y = -innerH * 0.5 + bgH * (i + 0.5);
-            n.setPosition(0, y, 0);
             const sp = n.addComponent(Sprite);
-            sp.spriteFrame = sf;
+            sp.spriteFrame = backgroundSf;
             sp.sizeMode = Sprite.SizeMode.CUSTOM;
         }
 
@@ -462,7 +573,7 @@ export class MapScreenManager extends Component {
             zoomRoot.addChild(wrap);
             wrap.setPosition(def.x, def.y, 0);
             const wUt = wrap.addComponent(UITransform);
-            wUt.setContentSize(120, 120);
+            wUt.setContentSize(108, 108);
             this._wrapById[def.id] = wrap;
 
             if (auraSf) {
@@ -470,11 +581,11 @@ export class MapScreenManager extends Component {
                 wrap.addChild(aura);
                 aura.setSiblingIndex(0);
                 const aUt = aura.addComponent(UITransform);
-                aUt.setContentSize(138, 138);
+                aUt.setContentSize(112, 112);
                 const aSp = aura.addComponent(Sprite);
                 aSp.spriteFrame = auraSf;
                 aSp.sizeMode = Sprite.SizeMode.CUSTOM;
-                aSp.color = new Color(42, 48, 58, 200);
+                aSp.color = new Color(42, 48, 58, 118);
             }
 
             let glowSp: Sprite | undefined;
@@ -482,7 +593,7 @@ export class MapScreenManager extends Component {
                 const glow = new Node('WarmGlow');
                 wrap.addChild(glow);
                 const gUt = glow.addComponent(UITransform);
-                gUt.setContentSize(128, 128);
+                gUt.setContentSize(108, 108);
                 const gSp = glow.addComponent(Sprite);
                 gSp.spriteFrame = plateSf;
                 gSp.sizeMode = Sprite.SizeMode.CUSTOM;
@@ -495,7 +606,7 @@ export class MapScreenManager extends Component {
                 const plate = new Node('Plate');
                 wrap.addChild(plate);
                 const pUt = plate.addComponent(UITransform);
-                pUt.setContentSize(112, 112);
+                pUt.setContentSize(96, 96);
                 const pSp = plate.addComponent(Sprite);
                 pSp.spriteFrame = plateSf;
                 pSp.sizeMode = Sprite.SizeMode.CUSTOM;
@@ -504,7 +615,7 @@ export class MapScreenManager extends Component {
                 const ic = new Node('Icon');
                 wrap.addChild(ic);
                 const iUt = ic.addComponent(UITransform);
-                iUt.setContentSize(72, 72);
+                iUt.setContentSize(66, 66);
                 const iSp = ic.addComponent(Sprite);
                 iSp.spriteFrame = iconSf;
                 iSp.sizeMode = Sprite.SizeMode.CUSTOM;
@@ -513,9 +624,9 @@ export class MapScreenManager extends Component {
             const ringN = new Node('SelectRing');
             wrap.addChild(ringN);
             const rUt = ringN.addComponent(UITransform);
-            rUt.setContentSize(120, 120);
+            rUt.setContentSize(108, 108);
             const rGfx = ringN.addComponent(Graphics);
-            paintSelectionRing(rGfx, 54, 5, new Color(255, 255, 255, 250));
+            paintSelectionRing(rGfx, 48, 4, new Color(255, 255, 255, 250));
             ringN.active = false;
             this._ringGfxById[def.id] = rGfx;
 
@@ -547,6 +658,10 @@ export class MapScreenManager extends Component {
 
     private bindMapZoomInput(mapRoot: Node): void {
         mapRoot.on(Node.EventType.MOUSE_WHEEL, this.onMapMouseWheel, this);
+        mapRoot.on(Node.EventType.MOUSE_DOWN, this.onMapMouseDown, this);
+        mapRoot.on(Node.EventType.MOUSE_MOVE, this.onMapMouseMove, this);
+        mapRoot.on(Node.EventType.MOUSE_UP, this.onMapMouseUp, this);
+        mapRoot.on(Node.EventType.MOUSE_LEAVE, this.onMapMouseUp, this);
         mapRoot.on(Node.EventType.TOUCH_START, this.onMapTouchStart, this);
         mapRoot.on(Node.EventType.TOUCH_MOVE, this.onMapTouchMove, this);
         mapRoot.on(Node.EventType.TOUCH_END, this.onMapTouchEnd, this);
@@ -562,14 +677,35 @@ export class MapScreenManager extends Component {
         this.setMapScale(this._mapScale * factor);
     }
 
+    private onMapMouseDown(ev: EventMouse): void {
+        this._mouseDragUiPos = ev.getUILocation();
+        this._mapWasDragged = false;
+    }
+
+    private onMapMouseMove(ev: EventMouse): void {
+        if (!this._mouseDragUiPos) {
+            return;
+        }
+        const next = ev.getUILocation();
+        this.panMapBy(next.y - this._mouseDragUiPos.y);
+        this._mouseDragUiPos = next;
+    }
+
+    private onMapMouseUp(): void {
+        this._mouseDragUiPos = null;
+    }
+
     private onMapTouchStart(ev: EventTouch): void {
         const t = ev.touch;
         if (!t) {
             return;
         }
         this._touchUiPos.set(t.getID(), t.getUILocation());
+        this._lastDragUiPos = t.getUILocation();
+        this._mapWasDragged = false;
         if (this._touchUiPos.size >= 2) {
             this._lastPinchDist = 0;
+            this._lastDragUiPos = null;
         }
     }
 
@@ -578,7 +714,13 @@ export class MapScreenManager extends Component {
         if (!t) {
             return;
         }
-        this._touchUiPos.set(t.getID(), t.getUILocation());
+        const next = t.getUILocation();
+        this._touchUiPos.set(t.getID(), next);
+        if (this._touchUiPos.size === 1 && this._lastDragUiPos) {
+            this.panMapBy(next.y - this._lastDragUiPos.y);
+            this._lastDragUiPos = next;
+            return;
+        }
         if (this._touchUiPos.size < 2 || !this._zoomRoot) {
             return;
         }
@@ -607,6 +749,8 @@ export class MapScreenManager extends Component {
         if (this._touchUiPos.size < 2) {
             this._lastPinchDist = 0;
         }
+        const remaining = Array.from(this._touchUiPos.values());
+        this._lastDragUiPos = remaining.length === 1 ? remaining[0] : null;
     }
 
     private setMapScale(s: number): void {
@@ -614,10 +758,40 @@ export class MapScreenManager extends Component {
         this._mapScale = next;
         if (this._zoomRoot) {
             this._zoomRoot.setScale(next, next, 1);
+            this.centerMapOnNode(GlobalData.instance.mapCurrentNodeId);
         }
     }
 
+    private centerMapOnNode(nodeId: number): void {
+        const current = MAP_GRAPH[nodeId];
+        if (this._zoomRoot && current) {
+            const focusY = -view.getVisibleSize().height * 0.27;
+            this._zoomRoot.setPosition(0, focusY - current.y * this._mapScale, 0);
+        }
+    }
+
+    private panMapBy(deltaY: number): void {
+        if (!this._zoomRoot || Math.abs(deltaY) < 0.01) {
+            return;
+        }
+        if (Math.abs(deltaY) > 2) {
+            this._mapWasDragged = true;
+        }
+        const vs = view.getVisibleSize();
+        const mapBottom = MAP_GRAPH[0]?.y ?? 0;
+        const mapTop = MAP_GRAPH[MAP_GRAPH.length - 1]?.y ?? 0;
+        const margin = 120;
+        const minRootY = -vs.height * 0.5 + margin - mapTop * this._mapScale;
+        const maxRootY = vs.height * 0.5 - margin - mapBottom * this._mapScale;
+        const nextY = clamp(this._zoomRoot.position.y + deltaY, minRootY, maxRootY);
+        this._zoomRoot.setPosition(0, nextY, 0);
+    }
+
     private onTapNode(nodeId: number): void {
+        if (this._mapWasDragged) {
+            this._mapWasDragged = false;
+            return;
+        }
         const cur = GlobalData.instance.mapCurrentNodeId;
         const curNode = MAP_GRAPH[cur];
         if (!curNode || !curNode.children.includes(nodeId)) {
@@ -625,6 +799,7 @@ export class MapScreenManager extends Component {
         }
         GlobalData.instance.mapCurrentNodeId = nodeId;
         GlobalData.instance.mapPathNodeIds.push(nodeId);
+        this.centerMapOnNode(nodeId);
         this.redrawPathLine();
         this.refreshRunHud();
         this.refreshPingAndInteract();
@@ -1581,10 +1756,15 @@ export class MapScreenManager extends Component {
     private refreshPingAndInteract(): void {
         const cur = GlobalData.instance.mapCurrentNodeId;
         const standWrap = this._wrapById[cur];
+        if (standWrap) {
+            standWrap.setSiblingIndex(Math.max(0, (standWrap.parent?.children.length ?? 1) - 1));
+            standWrap.getChildByName('SelectRing')?.setSiblingIndex(standWrap.children.length - 1);
+        }
         if (standWrap && this._pingRoot) {
             this._pingRoot.removeFromParent();
             standWrap.addChild(this._pingRoot);
             this._pingRoot.setPosition(0, 62, 0);
+            standWrap.getChildByName('SelectRing')?.setSiblingIndex(standWrap.children.length - 1);
         }
 
         const curNode = MAP_GRAPH[cur];
