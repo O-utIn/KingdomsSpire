@@ -348,7 +348,7 @@ const SHOP_BACK_ARROW = 'textures/shop/settings_tiny_left_arrow';
 const SHOP_REMOVE_ICON = 'textures/shop/card_removal_00';
 const SHOP_GOLD_ICON = 'textures/shop/top_bar_gold';
 const SHOP_POTION_DESCRIPTIONS: Record<string, string> = {
-    fire_potion: '造成 20 点伤害。',
+    fire_potion: '随机造成 25–150 点伤害。',
     swift_potion: '抽 3 张牌。',
     blood_potion: '回复 20% 最大生命。',
 };
@@ -1050,12 +1050,12 @@ export class MapScreenManager extends Component {
 
         const cardItems: { node: string; id: CardId; price: number; x: number; y: number; sale: boolean }[] = [
             { node: 'ShopC1', id: 'bash', price: 49, x: -520, y: 178, sale: false },
-            { node: 'ShopC2', id: 'survivor', price: 74, x: -310, y: 178, sale: false },
-            { node: 'ShopC3', id: 'bridge_break', price: 68, x: -100, y: 178, sale: false },
-            { node: 'ShopC4', id: 'blood_rite', price: 82, x: 110, y: 178, sale: false },
-            { node: 'ShopC5', id: 'tactical_terrain', price: 96, x: 320, y: 178, sale: false },
-            { node: 'ShopC6', id: 'scheme', price: 64, x: -420, y: -170, sale: false },
-            { node: 'ShopC7', id: 'descent_wusheng', price: 110, x: -190, y: -170, sale: false },
+            { node: 'ShopC2', id: 'survivor', price: 74, x: -300, y: 178, sale: false },
+            { node: 'ShopC3', id: 'bridge_break', price: 68, x: -80, y: 178, sale: false },
+            { node: 'ShopC4', id: 'blood_rite', price: 82, x: 140, y: 178, sale: false },
+            { node: 'ShopC5', id: 'tactical_terrain', price: 96, x: -410, y: -170, sale: false },
+            { node: 'ShopC6', id: 'scheme', price: 64, x: -170, y: -170, sale: false },
+            { node: 'ShopC7', id: 'descent_wusheng', price: 110, x: 70, y: -170, sale: false },
         ];
         for (const item of cardItems) {
             const def = getCardDef(item.id);
@@ -1116,19 +1116,17 @@ export class MapScreenManager extends Component {
                 showStatus('金币不足，无法使用删牌服务。');
                 return false;
             }
-            const idx = gd.deckIds.indexOf('strike');
-            if (idx < 0) {
-                showStatus('牌组里没有可移除的打击。');
+            if (gd.deckIds.length === 0) {
+                showStatus('牌组里没有可移除的卡牌。');
                 return false;
             }
-            hero.gold -= removalCost;
-            gd.deckIds.splice(idx, 1);
-            gd.deckCount = gd.deckIds.length;
-            gd.shopRemovalCount += 1;
-            RunHudManager.startRun();
-            showStatus('移除一张打击。');
-            return true;
-        }, !resolved && gd.deckIds.includes('strike'));
+            this.showCardRemovalPicker(panel, removalCost, (removedName) => {
+                panel.getChildByName('CardRemovalService')?.destroy();
+                RunHudManager.startRun();
+                showStatus(`移除卡牌：${removedName}`);
+            });
+            return false;
+        }, !resolved && gd.deckIds.length > 0);
 
         await this.makeShopBackButton(panel, () => {
             gd.markMapNodeResolved(nodeId);
@@ -1720,6 +1718,71 @@ export class MapScreenManager extends Component {
         this.addModalLabel(slot, 'RemoveName', 130, 24, 0, -44, 14, new Color(255, 238, 190, 255), Label.HorizontalAlign.CENTER).string = '卡牌移除';
         const purchase = await this.addShopPriceButton(slot, 'BuyRemove', price, 0, -82, onBuy, enabled);
         this.bindShopPurchase(slot, purchase, enabled);
+    }
+
+    private showCardRemovalPicker(parent: Node, price: number, onRemoved: (cardName: string) => void): void {
+        parent.getChildByName('CardRemovalPicker')?.destroy();
+
+        const gd = GlobalData.instance;
+        const overlay = new Node('CardRemovalPicker');
+        parent.addChild(overlay);
+        overlay.setSiblingIndex(parent.children.length - 1);
+        const overlayUt = overlay.addComponent(UITransform);
+        overlayUt.setContentSize(1760, 900);
+        overlay.addComponent(BlockInputEvents);
+        const shade = overlay.addComponent(Graphics);
+        shade.fillColor = new Color(0, 0, 0, 190);
+        shade.rect(-880, -450, 1760, 900);
+        shade.fill();
+        overlay.on(Node.EventType.TOUCH_START, () => {}, this);
+
+        const picker = new Node('PickerPanel');
+        overlay.addChild(picker);
+        const pickerUt = picker.addComponent(UITransform);
+        pickerUt.setContentSize(1120, 650);
+        const pickerGraphics = picker.addComponent(Graphics);
+        paintRoundRect(pickerGraphics, 1120, 650, new Color(20, 25, 36, 252), new Color(214, 176, 96, 255), 3);
+
+        this.addModalLabel(picker, 'Title', 940, 48, 0, 276, 32, new Color(255, 220, 128, 255), Label.HorizontalAlign.CENTER).string = '选择一张要移除的卡牌';
+        this.addModalLabel(picker, 'Hint', 940, 32, 0, 234, 18, new Color(210, 220, 232, 255), Label.HorizontalAlign.CENTER).string = `确认后花费 ${price} 金币，每次移除一张`;
+
+        const counts = new Map<CardId, number>();
+        for (const cardId of gd.deckIds) {
+            counts.set(cardId, (counts.get(cardId) ?? 0) + 1);
+        }
+        const cards = [...counts.entries()];
+        const columns = 5;
+        const startX = -424;
+        const startY = 150;
+        const gapX = 212;
+        const gapY = 112;
+
+        cards.forEach(([cardId, count], index) => {
+            const def = getCardDef(cardId);
+            const title = def?.name ?? cardId;
+            const x = startX + (index % columns) * gapX;
+            const y = startY - Math.floor(index / columns) * gapY;
+            const button = this.makeModalButton(picker, `Remove_${cardId}_${index}`, `${title}  x${count}`, 188, 86, x, y, () => {
+                const hero = gd.selectedChar;
+                const deckIndex = gd.deckIds.indexOf(cardId);
+                if (!hero || hero.gold < price || deckIndex < 0) {
+                    return;
+                }
+                hero.gold -= price;
+                gd.deckIds.splice(deckIndex, 1);
+                gd.deckCount = gd.deckIds.length;
+                gd.shopRemovalCount += 1;
+                overlay.destroy();
+                onRemoved(title);
+            }, true);
+            const label = button.getChildByName('Label')?.getComponent(Label);
+            if (label) {
+                label.fontSize = 18;
+                label.lineHeight = 22;
+            }
+        });
+
+        this.makeModalButton(picker, 'CancelRemoval', '取消', 170, 52, 0, -274, () => overlay.destroy(), true);
     }
 
     private async makeShopBackButton(parent: Node, onClick: () => void): Promise<void> {
