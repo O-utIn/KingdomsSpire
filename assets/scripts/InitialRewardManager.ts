@@ -184,11 +184,15 @@ export class InitialRewardManager extends Component {
         if (!n) {
             n = new Node('RelicIcon');
             parent.addChild(n);
-            const ut = n.addComponent(UITransform);
-            ut.setContentSize(56, 56);
-            n.setPosition(-286, 0, 0);
             n.addComponent(Sprite).sizeMode = Sprite.SizeMode.CUSTOM;
         }
+
+        n.layer = parent.layer;
+        const ut = n.getComponent(UITransform) ?? n.addComponent(UITransform);
+        ut.setContentSize(68, 68);
+        n.setPosition(-292, 0, 0);
+        n.active = true;
+        n.setSiblingIndex(parent.children.length - 1);
 
         const sp = n.getComponent(Sprite);
         resources.load(`${relic.iconPath}/spriteFrame`, SpriteFrame, (err, sf) => {
@@ -208,6 +212,7 @@ export class InitialRewardManager extends Component {
         if (!n) {
             n = new Node('Title');
             parent.addChild(n);
+            n.layer = parent.layer;
             const ut = n.addComponent(UITransform);
             ut.setContentSize(500, 32);
             ut.anchorPoint = new Vec2(0, 0.5);
@@ -225,6 +230,7 @@ export class InitialRewardManager extends Component {
             n.setPosition(-210, 14, 0);
             return lb;
         }
+        n.layer = parent.layer;
         const ut = n.getComponent(UITransform);
         if (ut) {
             ut.setContentSize(500, 32);

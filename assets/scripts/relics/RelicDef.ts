@@ -37,7 +37,7 @@ export const RELIC_DEFS: RelicDef[] = [
         id: 'neow_energy_core',
         name: '能量核心',
         description: '每场战斗第一回合额外获得 1 点能量。',
-        iconPath: 'textures/relics/lantern',
+        iconPath: 'textures/relics/centennial_puzzle',
         pool: 'neow',
         effects: { startCombatEnergy: 1 },
     },
