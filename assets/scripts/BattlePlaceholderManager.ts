@@ -162,6 +162,7 @@ export class BattlePlaceholderManager extends Component {
     private _shadowLabel: Label | null = null;
     private _logLabel: Label | null = null;
     private _handRoot: Node | null = null;
+    private _potionRoot: Node | null = null;
     private _relicTooltip: Node | null = null;
     private _relicTooltipTitle: Label | null = null;
     private _relicTooltipDesc: Label | null = null;
@@ -285,6 +286,7 @@ export class BattlePlaceholderManager extends Component {
         this.buildEnemyPanels(vs.width, vs.height);
         this.buildLogPanel(vs.width, vs.height);
         this.buildHandPanel(vs.width, vs.height);
+        this.buildPotionBar(vs.width, vs.height);
         this.buildEndTurnButton(vs.width, vs.height);
     }
 
@@ -565,6 +567,114 @@ export class BattlePlaceholderManager extends Component {
 
     private buildEndTurnButton(w: number, h: number): void {
         this.makeButton('EndTurnButton', '结束回合', 190, 58, w * 0.5 - 170, -h * 0.5 + 292, () => this.endPlayerTurn());
+    }
+
+    private buildPotionBar(w: number, h: number): void {
+        const root = new Node('PotionBar');
+        this.node.addChild(root);
+        root.setPosition(w * 0.5 - 500, -h * 0.5 + 292, 0);
+        root.addComponent(UITransform).setContentSize(430, 64);
+        this._potionRoot = root;
+        this.refreshPotionBar();
+    }
+
+    private refreshPotionBar(): void {
+        const root = this._potionRoot;
+        if (!root?.isValid) {
+            return;
+        }
+        for (const child of [...root.children]) {
+            child.destroy();
+        }
+        const potions = GlobalData.instance.potionIds;
+        if (potions.length === 0) {
+            this.addLabel(root, 'Empty', 180, 40, 0, 0, 17, new Color(185, 195, 210, 255)).string = '暂无药水';
+            return;
+        }
+        const icons: Record<string, string> = {
+            fire_potion: 'textures/potions/fire_potion',
+            swift_potion: 'textures/potions/swift_potion',
+            blood_potion: 'textures/potions/blood_potion',
+        };
+        const slotW = 62;
+        const gap = 10;
+        const startX = -((potions.length - 1) * (slotW + gap)) * 0.5;
+        potions.forEach((id, index) => {
+            const slot = new Node(`Potion_${index}`);
+            root.addChild(slot);
+            slot.setPosition(startX + index * (slotW + gap), 0, 0);
+            slot.addComponent(UITransform).setContentSize(slotW, 62);
+            const g = slot.addComponent(Graphics);
+            paintRoundRect(g, slotW, 62, new Color(45, 54, 70, 245), new Color(220, 181, 98, 255), 2);
+            const icon = new Node('Icon');
+            slot.addChild(icon);
+            icon.addComponent(UITransform).setContentSize(52, 52);
+            const sprite = icon.addComponent(Sprite);
+            sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+            const iconPath = icons[id];
+            if (iconPath) {
+                loadSpriteFrame(iconPath).then((sf) => {
+                    if (sf && icon.isValid) {
+                        sprite.spriteFrame = sf;
+                    }
+                });
+            }
+            slot.on(Node.EventType.TOUCH_END, () => this.usePotion(index), this);
+        });
+    }
+
+    private usePotion(index: number): void {
+        if (this._state !== 'player') {
+            this.pushLog('只能在玩家回合使用药水。');
+            this.refreshLog();
+            return;
+        }
+        const potions = GlobalData.instance.potionIds;
+        const potionId = potions[index];
+        if (!potionId) {
+            return;
+        }
+
+        if (potionId === 'fire_potion') {
+            const target = this.selectedEnemy() ?? this.firstAliveEnemy();
+            if (!target) {
+                return;
+            }
+            const damage = 25 + Math.floor(Math.random() * 126);
+            const wasDead = target.isDead;
+            const hpLoss = target.takeDamage(damage);
+            const name = getEnemyDef(target.defId)?.name ?? target.defId;
+            this.pushLog(`使用火焰药水，对 ${name} 造成 ${hpLoss}/${damage} 点生命伤害。`);
+            if (!wasDead && target.isDead) {
+                this.recordEnemyKill(target);
+            }
+        } else if (potionId === 'swift_potion') {
+            const drawn = this._flow.draw(3).length;
+            this.pushLog(`使用敏捷药水，抽 ${drawn} 张牌。`);
+        } else if (potionId === 'blood_potion') {
+            const hero = this.ensureSelectedCharacter();
+            if (hero.hp >= hero.maxHp) {
+                this.pushLog('生命已满，无法使用鲜血药水。');
+                this.refreshLog();
+                return;
+            }
+            this.healPlayer(Math.max(1, Math.ceil(hero.maxHp * 0.2)), '鲜血药水');
+        } else {
+            this.pushLog(`未知药水：${potionId}。`);
+            this.refreshLog();
+            return;
+        }
+
+        potions.splice(index, 1);
+        this.refreshPotionBar();
+        if (this._enemies.every((enemy) => enemy.isDead)) {
+            this.finishVictory();
+            return;
+        }
+        if (!this.selectedEnemy()) {
+            this._selectedEnemyUid = this.firstAliveEnemy()?.uid ?? 0;
+        }
+        this.refreshAll();
     }
 
     private makePanel(name: string, w: number, h: number, x: number, y: number, fill: Color, stroke?: Color): Node {
