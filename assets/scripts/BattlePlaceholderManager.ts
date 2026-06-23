@@ -173,11 +173,23 @@ export class BattlePlaceholderManager extends Component {
 
     async start(): Promise<void> {
         this.syncCanvasCameraToScreen();
+        if (this.shouldReturnToMainMenuFromInvalidLaunch()) {
+            director.loadScene(SCENE_MAIN_MENU);
+            return;
+        }
         this.setupCombatData();
         GlobalAudioManager.playRunBgm();
         RunHudManager.startRun();
         await this.buildSceneGraph();
         this.startPlayerTurn(true);
+    }
+
+    private shouldReturnToMainMenuFromInvalidLaunch(): boolean {
+        const gd = GlobalData.instance;
+        return !gd.pendingEncounterKind
+            && gd.pendingEncounterNodeId < 0
+            && gd.mapPathNodeIds.length <= 1
+            && gd.runStartedAtMs <= 0;
     }
 
     private syncCanvasCameraToScreen(): void {
