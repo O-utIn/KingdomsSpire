@@ -1,4 +1,4 @@
-import { _decorator, AudioClip, AudioSource, Component, director, Node, resources, sys } from 'cc';
+import { _decorator, AudioClip, AudioSource, Component, director, game, Game, Node, resources, sys } from 'cc';
 
 const { ccclass } = _decorator;
 
@@ -16,6 +16,8 @@ export class GlobalAudioManager extends Component {
     private _source: AudioSource | null = null;
     private _requestedPath = DEFAULT_BGM;
     private _currentPath = '';
+    private _resumePath = '';
+    private _resumeTime = 0;
     private _musicEnabled = true;
     private _volume = DEFAULT_VOLUME;
 
@@ -48,8 +50,7 @@ export class GlobalAudioManager extends Component {
         if (enabled) {
             mgr.playLoop(mgr._requestedPath);
         } else {
-            mgr._source?.stop();
-            mgr._currentPath = '';
+            mgr.pauseCurrent();
         }
     }
 
@@ -112,9 +113,13 @@ export class GlobalAudioManager extends Component {
             ? savedVolume
             : DEFAULT_VOLUME;
         this._source.volume = this._volume;
+        game.on(Game.EVENT_HIDE, this.pauseCurrent, this);
+        game.on(Game.EVENT_SHOW, this.resumeRequested, this);
     }
 
     onDestroy(): void {
+        game.off(Game.EVENT_HIDE, this.pauseCurrent, this);
+        game.off(Game.EVENT_SHOW, this.resumeRequested, this);
         if (GlobalAudioManager._instance === this) {
             GlobalAudioManager._instance = null;
         }
@@ -136,6 +141,10 @@ export class GlobalAudioManager extends Component {
         if (this._currentPath === path && source.playing) {
             return;
         }
+        if (this._currentPath === path && source.clip) {
+            this.resumeSource(path);
+            return;
+        }
         resources.load(path, AudioClip, (err, clip) => {
             if (err || !clip || !this.node.isValid) {
                 console.warn(`[GlobalAudioManager] 加载背景音乐失败：${path}`, err);
@@ -146,8 +155,46 @@ export class GlobalAudioManager extends Component {
             }
             source.stop();
             source.clip = clip;
+            this.seekSource(path === this._resumePath ? this._resumeTime : 0);
             source.play();
             this._currentPath = path;
         });
+    }
+
+    private pauseCurrent(): void {
+        const source = this._source;
+        if (!source?.playing) {
+            return;
+        }
+        this._resumePath = this._currentPath || this._requestedPath;
+        this._resumeTime = this.readCurrentTime(source);
+        source.pause();
+    }
+
+    private resumeRequested(): void {
+        if (this._musicEnabled) {
+            this.playLoop(this._requestedPath);
+        }
+    }
+
+    private resumeSource(path: string): void {
+        if (!this._source) {
+            return;
+        }
+        this.seekSource(path === this._resumePath ? this._resumeTime : 0);
+        this._source.play();
+        this._currentPath = path;
+    }
+
+    private readCurrentTime(source: AudioSource): number {
+        const anySource = source as unknown as { currentTime?: number };
+        return Math.max(0, anySource.currentTime ?? 0);
+    }
+
+    private seekSource(time: number): void {
+        const anySource = this._source as unknown as { currentTime?: number } | null;
+        if (anySource && Number.isFinite(time) && time > 0) {
+            anySource.currentTime = time;
+        }
     }
 }

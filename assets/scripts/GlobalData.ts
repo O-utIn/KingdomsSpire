@@ -1,5 +1,6 @@
 import type { RelicId } from './relics/RelicDef';
 import type { CardId } from './cards/CardDef';
+import { sys } from 'cc';
 
 export interface CharacterPackage {
     id: number;
@@ -13,6 +14,36 @@ export interface CharacterPackage {
 
 export type CombatEncounterKind = '' | 'monster' | 'elite' | 'boss';
 
+export interface RunMapParams {
+    difficulty: number;
+    pathFloors: number;
+    lowerShopFloorLimit: number;
+    upperShopFloorStart: number;
+}
+
+export interface RunHistoryRecord {
+    id: string;
+    result: '' | 'victory' | 'defeat';
+    characterName: string;
+    characterId: number;
+    difficulty: number;
+    elapsedMs: number;
+    elapsedText: string;
+    reachedFloor: number;
+    mapFloorCount: number;
+    battlesWon: number;
+    battlesLost: number;
+    enemiesKilled: number;
+    deckCount: number;
+    hp: number;
+    maxHp: number;
+    gold: number;
+    endedAtMs: number;
+}
+
+const RUN_HISTORY_KEY = 'kingdoms-spire.run-history';
+const RUN_HISTORY_LIMIT = 20;
+
 // 全局字段一律采用instance写法而不是static写法
 export class GlobalData {
     private static _instance: GlobalData;
@@ -23,6 +54,12 @@ export class GlobalData {
 
     public selectedCharId: number = 0;
     public difficulty: number = 1;
+    public runMapParams: RunMapParams = {
+        difficulty: 1,
+        pathFloors: 15,
+        lowerShopFloorLimit: 5,
+        upperShopFloorStart: 12,
+    };
     public selectedChar: CharacterPackage | null = null;
     public initialRewardChoiceIndex: number = -1;
     public deckCount: number = 17;
@@ -54,6 +91,12 @@ export class GlobalData {
 
     public resetMapProgress(): void {
         this.mapGeneration += 1;
+        this.runMapParams = {
+            difficulty: this.difficulty,
+            pathFloors: 15,
+            lowerShopFloorLimit: 5,
+            upperShopFloorStart: 12,
+        };
         this.mapCurrentNodeId = 0;
         this.mapPathNodeIds = [0];
         this.mapFloorCount = 0;
@@ -140,6 +183,53 @@ export class GlobalData {
     public markMapNodeResolved(nodeId: number): void {
         if (!this.isMapNodeResolved(nodeId)) {
             this.resolvedMapNodeIds.push(nodeId);
+        }
+    }
+
+    public createRunHistoryRecord(): RunHistoryRecord {
+        const ch = this.selectedChar;
+        const elapsedMs = this.getRunElapsedMs();
+        const nodeFloor = Math.max(0, this.mapPathNodeIds.length - 1);
+        return {
+            id: `${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+            result: this.runResult,
+            characterName: ch?.name ?? 'Unknown',
+            characterId: ch?.id ?? this.selectedCharId,
+            difficulty: this.runMapParams.difficulty || this.difficulty,
+            elapsedMs,
+            elapsedText: this.getRunElapsedText(),
+            reachedFloor: nodeFloor + 1,
+            mapFloorCount: this.mapFloorCount,
+            battlesWon: this.runBattlesWon,
+            battlesLost: this.runBattlesLost,
+            enemiesKilled: this.runEnemiesKilled,
+            deckCount: this.deckIds.length || this.deckCount,
+            hp: ch?.hp ?? 0,
+            maxHp: ch?.maxHp ?? 0,
+            gold: ch?.gold ?? 0,
+            endedAtMs: this.runEndedAtMs || Date.now(),
+        };
+    }
+
+    public saveCurrentRunToHistory(): void {
+        if (!this.runResult) {
+            return;
+        }
+        const records = GlobalData.loadRunHistory();
+        records.unshift(this.createRunHistoryRecord());
+        sys.localStorage.setItem(RUN_HISTORY_KEY, JSON.stringify(records.slice(0, RUN_HISTORY_LIMIT)));
+    }
+
+    public static loadRunHistory(): RunHistoryRecord[] {
+        const raw = sys.localStorage.getItem(RUN_HISTORY_KEY);
+        if (!raw) {
+            return [];
+        }
+        try {
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed.slice(0, RUN_HISTORY_LIMIT) : [];
+        } catch {
+            return [];
         }
     }
 }

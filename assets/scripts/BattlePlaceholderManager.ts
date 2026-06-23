@@ -68,7 +68,7 @@ interface EnemyView {
     intentLabel: Label;
 }
 
-const BATTLE_BG = 'textures/spire-codex-ui-map-backgrounds/map_middle_underdocks';
+const BATTLE_BG = 'textures/background/bg_battle';
 
 const PLAYER_ART_BY_CHAR = [
     'textures/chars/character_battle',
@@ -208,7 +208,7 @@ export class BattlePlaceholderManager extends Component {
         this._encounterKind = gd.pendingEncounterKind || 'monster';
         const enemyIds = this.createEncounterEnemyIds(this._encounterKind, gd.pendingEncounterNodeId);
         this._enemies.length = 0;
-        this._enemies.push(...enemyIds.map((id) => createEnemyInstance(id)));
+        this._enemies.push(...enemyIds.map((id) => createEnemyInstance(id, this.enemyStatScale(id))));
         this._selectedEnemyUid = this.firstAliveEnemy()?.uid ?? 0;
 
         const deckIds = gd.deckIds.length > 0 ? gd.deckIds : getStarterDeckForCharacter(gd.selectedCharId);
@@ -264,6 +264,21 @@ export class BattlePlaceholderManager extends Component {
         ];
         const index = Math.abs(nodeId) % normalPools.length;
         return normalPools[index] ?? ['cultist'];
+    }
+
+    private enemyStatScale(enemyId: EnemyId): number {
+        const tier = getEnemyDef(enemyId)?.tier;
+        if (tier !== 'normal') {
+            return 1;
+        }
+        const gd = GlobalData.instance;
+        const pathFloors = Math.max(1, gd.runMapParams.pathFloors || 15);
+        const reachedFloor = Math.max(1, gd.mapPathNodeIds.length - 1);
+        const middleFloor = Math.ceil(pathFloors * 0.5);
+        const horseScale = reachedFloor >= middleFloor ? 1.2 : 0.9;
+        const floorScale = 1 + Math.max(0, reachedFloor - 1) * 0.025;
+        const difficultyScale = 1 + Math.max(0, (gd.runMapParams.difficulty || gd.difficulty) - 1) * 0.03;
+        return horseScale * floorScale * difficultyScale;
     }
 
     private async buildSceneGraph(): Promise<void> {
@@ -777,7 +792,7 @@ export class BattlePlaceholderManager extends Component {
 
             if (intent?.damage) {
                 const hits = Math.max(1, intent.hits ?? 1);
-                const damagePerHit = intent.damage + enemy.strength;
+                const damagePerHit = enemy.scaledIntentDamage(intent) + enemy.strength;
                 let totalHpLoss = 0;
                 for (let i = 0; i < hits; i++) {
                     totalHpLoss += this.damagePlayer(damagePerHit);
@@ -790,8 +805,9 @@ export class BattlePlaceholderManager extends Component {
                 this.pushLog(`${name} 攻击${hitText}，造成 ${totalHpLoss}/${totalDamage} 点生命伤害。`);
             }
             if (intent?.block) {
-                enemy.addBlock(intent.block);
-                this.pushLog(`${name} 获得 ${intent.block} 点格挡。`);
+                const block = enemy.scaledIntentBlock(intent);
+                enemy.addBlock(block);
+                this.pushLog(`${name} 获得 ${block} 点格挡。`);
             }
             if (intent?.summons?.length) {
                 const summoned = this.summonEnemies(intent.summons, intent.summonLimitPerId);
@@ -799,12 +815,14 @@ export class BattlePlaceholderManager extends Component {
                     this.pushLog(`${name} 召唤了 ${summoned} 名援军。`);
                     this.rebuildEnemyPanels();
                 } else if (intent.strength) {
-                    const buffed = this.addFactionStrength(enemy.defId, intent.strength);
-                    this.pushLog(`${name} 号令全军，${buffed} 名友军获得 ${intent.strength} 点力量。`);
+                    const strength = enemy.scaledIntentStrength(intent);
+                    const buffed = this.addFactionStrength(enemy.defId, strength);
+                    this.pushLog(`${name} 号令全军，${buffed} 名友军获得 ${strength} 点力量。`);
                 }
             } else if (intent?.strength) {
-                enemy.strength += intent.strength;
-                this.pushLog(`${name} 获得 ${intent.strength} 点力量。`);
+                const strength = enemy.scaledIntentStrength(intent);
+                enemy.strength += strength;
+                this.pushLog(`${name} 获得 ${strength} 点力量。`);
             }
             if (intent?.playerDebuff) {
                 this.pushLog(`${name} 施加 ${intent.playerDebuff}。`);
@@ -1226,8 +1244,7 @@ export class BattlePlaceholderManager extends Component {
 
     private prepareDrawnCard(card: CardInstance): void {
         if (card.cyclesDescentOnDraw) {
-            const id = DESCENT_CYCLE_IDS[this._nextDescentCycleIndex % DESCENT_CYCLE_IDS.length] ?? DESCENT_CYCLE_IDS[0];
-            this._nextDescentCycleIndex = (this._nextDescentCycleIndex + 1) % DESCENT_CYCLE_IDS.length;
+            const id = RANDOM_DESCENT_IDS[Math.floor(Math.random() * RANDOM_DESCENT_IDS.length)] ?? RANDOM_DESCENT_IDS[0];
             card.setDefinition(id);
         }
         this.handleStatusCardEnteringHand(card);
@@ -1292,6 +1309,7 @@ export class BattlePlaceholderManager extends Component {
         GlobalData.instance.recordBattleVictory(this._killCountThisBattle);
         if (this._finalRunSettlement) {
             GlobalData.instance.finishRunTimer();
+            GlobalData.instance.saveCurrentRunToHistory();
         }
         this._flow.discardAllHand();
         const kind = this._encounterKind || 'monster';
@@ -1318,6 +1336,7 @@ export class BattlePlaceholderManager extends Component {
         this._state = 'defeat';
         this._finalRunSettlement = true;
         GlobalData.instance.recordBattleDefeat(this._killCountThisBattle);
+        GlobalData.instance.saveCurrentRunToHistory();
         this.pushLog('生命归零，战斗失败。');
         this.refreshAll();
         this.showSettlement('defeat');

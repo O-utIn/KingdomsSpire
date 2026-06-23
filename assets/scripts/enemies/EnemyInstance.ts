@@ -11,6 +11,7 @@ let _nextUid = 1;
 export class EnemyInstance {
     readonly uid: number;
     currentHp: number;
+    private readonly _statScale: number;
     /** 当前格挡（回合结束是否清空由战斗系统决定） */
     block = 0;
     /** 当前回合展示的意图文案（由 pickIntentAt / setIntent 维护） */
@@ -20,18 +21,19 @@ export class EnemyInstance {
     /** 意图池轮转用 */
     private _intentIndex = 0;
 
-    constructor(public readonly defId: EnemyId) {
+    constructor(public readonly defId: EnemyId, statScale = 1) {
         const def = getEnemyDef(defId);
         if (!def) {
             throw new Error(`[EnemyInstance] 未知怪物 defId: ${defId}`);
         }
         this.uid = _nextUid++;
-        this.currentHp = def.maxHp;
+        this._statScale = Math.max(0.1, statScale);
+        this.currentHp = this.scaleStat(def.maxHp);
         this.pickIntentAt(0);
     }
 
     get maxHp(): number {
-        return getEnemyDef(this.defId)?.maxHp ?? 0;
+        return this.scaleStat(getEnemyDef(this.defId)?.maxHp ?? 0);
     }
 
     get isDead(): boolean {
@@ -41,6 +43,22 @@ export class EnemyInstance {
     get currentIntent(): EnemyIntentDef | null {
         const def = getEnemyDef(this.defId);
         return def?.intents[this._intentIndex] ?? null;
+    }
+
+    scaleStat(value: number): number {
+        return Math.max(1, Math.round(value * this._statScale));
+    }
+
+    scaledIntentDamage(intent: EnemyIntentDef): number {
+        return intent.damage ? this.scaleStat(intent.damage) : 0;
+    }
+
+    scaledIntentBlock(intent: EnemyIntentDef): number {
+        return intent.block ? this.scaleStat(intent.block) : 0;
+    }
+
+    scaledIntentStrength(intent: EnemyIntentDef): number {
+        return intent.strength ? this.scaleStat(intent.strength) : 0;
     }
 
     /** 从配置池按索引取意图（循环） */
@@ -93,6 +111,6 @@ export function resetEnemyUidCounterForTests(start = 1): void {
     _nextUid = start;
 }
 
-export function createEnemyInstance(defId: EnemyId): EnemyInstance {
-    return new EnemyInstance(defId);
+export function createEnemyInstance(defId: EnemyId, statScale = 1): EnemyInstance {
+    return new EnemyInstance(defId, statScale);
 }

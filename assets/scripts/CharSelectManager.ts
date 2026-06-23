@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Label, Sprite, director, resources, SpriteFrame, Toggle, tween, UIOpacity, game } from 'cc';
+import { _decorator, Color, Component, Label, Node, Sprite, director, resources, SpriteFrame, Toggle, tween, UIOpacity, UITransform, game } from 'cc';
 import { GlobalData } from './GlobalData';
 const { ccclass, property } = _decorator;
 
@@ -61,7 +61,55 @@ export class CharSelectManager extends Component {
         // 初始化默认显示
         this.currentDiffIdx = 0;
         GlobalData.instance.difficulty = this.difficultyLevels[this.currentDiffIdx];
+        this.applyDifficultyArrowLabels();
         this.updateUI(0);
+    }
+
+    private applyDifficultyArrowLabels(): void {
+        this.ensureArrowLabel(this.findNodeDeep(this.node, 'Btn_Prev'), '<');
+        this.ensureArrowLabel(this.findNodeDeep(this.node, 'Btn_Next'), '>');
+    }
+
+    private findNodeDeep(root: Node, name: string): Node | null {
+        if (root.name === name) {
+            return root;
+        }
+        for (const child of root.children) {
+            const found = this.findNodeDeep(child, name);
+            if (found) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    private ensureArrowLabel(button: Node | null, text: string): void {
+        if (!button) {
+            return;
+        }
+        let labelNode = button.getChildByName('ArrowLabel');
+        if (!labelNode) {
+            labelNode = new Node('ArrowLabel');
+            button.addChild(labelNode);
+            labelNode.layer = button.layer;
+            labelNode.addComponent(UITransform).setContentSize(100, 40);
+            const label = labelNode.addComponent(Label);
+            label.horizontalAlign = Label.HorizontalAlign.CENTER;
+            label.verticalAlign = Label.VerticalAlign.CENTER;
+            label.color = new Color(35, 24, 0, 255);
+            label.enableOutline = true;
+            label.outlineColor = new Color(255, 255, 255, 230);
+            label.outlineWidth = 2;
+        }
+        labelNode.layer = button.layer;
+        labelNode.setSiblingIndex(button.children.length - 1);
+        labelNode.setPosition(0, 0, 0);
+        const label = labelNode.getComponent(Label);
+        if (label) {
+            label.string = text;
+            label.fontSize = 34;
+            label.lineHeight = 40;
+        }
     }
 
     /**

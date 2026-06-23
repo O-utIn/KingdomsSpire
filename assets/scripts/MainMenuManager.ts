@@ -14,6 +14,7 @@ import {
     Vec3,
 } from 'cc';
 import { GlobalAudioManager } from './GlobalAudioManager';
+import { GlobalData } from './GlobalData';
 import { RunHudManager } from './RunHudManager';
 
 const { ccclass } = _decorator;
@@ -29,10 +30,20 @@ export class MainMenuManager extends Component {
         RunHudManager.stopRun();
         GlobalAudioManager.playBgm();
         this.node.getChildByName('Btn_Settings')?.on(Button.EventType.CLICK, this.onSettingsClick, this);
+        this.createHistoryButton();
     }
 
     onDestroy(): void {
         this.node.getChildByName('Btn_Settings')?.off(Button.EventType.CLICK, this.onSettingsClick, this);
+    }
+
+    private createHistoryButton(): void {
+        if (this.node.getChildByName('Btn_History')) {
+            return;
+        }
+        const btn = this.createButton(this.node, 'Btn_History', 0, -236, 240, 58);
+        this.addLabel(btn, '对局记录', 0, 0, 24, Color.WHITE);
+        btn.on(Node.EventType.TOUCH_END, this.onHistoryClick, this);
     }
 
     public onSinglePlayerClick(): void {
@@ -50,6 +61,45 @@ export class MainMenuManager extends Component {
             return;
         }
         this.createSettingsOverlay();
+    }
+
+    public onHistoryClick(): void {
+        const canvas = this.node.parent;
+        if (!canvas) {
+            return;
+        }
+        const records = GlobalData.loadRunHistory();
+        const overlay = new Node('RunHistoryOverlay');
+        canvas.addChild(overlay);
+        overlay.addComponent(BlockInputEvents);
+        const overlayTransform = overlay.addComponent(UITransform);
+        const canvasSize = canvas.getComponent(UITransform)?.contentSize;
+        overlayTransform.setContentSize(canvasSize?.width ?? 1920, canvasSize?.height ?? 1080);
+        this.drawRect(overlay, overlayTransform.contentSize.width, overlayTransform.contentSize.height, new Color(0, 0, 0, 175));
+
+        const panel = new Node('RunHistoryPanel');
+        overlay.addChild(panel);
+        panel.addComponent(UITransform).setContentSize(820, 620);
+        this.drawRect(panel, 820, 620, new Color(25, 31, 43, 250), new Color(205, 166, 92, 255), 4);
+        this.addLabel(panel, '对局记录', 0, 260, 34, new Color(255, 220, 148, 255));
+
+        if (records.length === 0) {
+            this.addLabel(panel, '暂无历史对局', 0, 40, 24, new Color(218, 226, 238, 255));
+        } else {
+            records.slice(0, 8).forEach((record, index) => {
+                const y = 202 - index * 54;
+                const result = record.result === 'victory' ? '胜利' : record.result === 'defeat' ? '失败' : '进行中';
+                const date = new Date(record.endedAtMs).toLocaleString();
+                const text = `${result}  ${record.characterName}  难度${record.difficulty}  ${record.elapsedText}  层${record.reachedFloor}/${record.mapFloorCount}  击杀${record.enemiesKilled}  ${date}`;
+                const row = this.addLabel(panel, text, 0, y, 17, new Color(224, 232, 242, 255));
+                row.node.getComponent(UITransform)?.setContentSize(740, 42);
+                row.overflow = Label.Overflow.SHRINK;
+            });
+        }
+
+        const close = this.createButton(panel, 'CloseHistory', 0, -260, 180, 54);
+        this.addLabel(close, '关闭', 0, 0, 22, Color.WHITE);
+        close.on(Node.EventType.TOUCH_END, () => overlay.destroy());
     }
 
     public onExitClick(): void {
