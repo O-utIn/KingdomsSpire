@@ -1,0 +1,207 @@
+{
+  "__version__": "1.3.9",
+  "log": {},
+  "common": {
+    "binGroupConfig": {
+      "threshold": 16,
+      "enable": false
+    },
+    "polyfills": {
+      "asyncFunctions": true
+    }
+  },
+  "BuildTaskManager": {
+    "taskMap": {
+      "1781695355810": {
+        "type": "build",
+        "id": "1781695355810",
+        "progress": 1,
+        "state": "success",
+        "stage": "build",
+        "message": "2026-6-17 19:36:54 build success in 18 s!",
+        "detailMessage": "// ---- build task  ----\r",
+        "options": {
+          "name": "KingdomSpire",
+          "server": "",
+          "engineModulesConfigKey": "defaultConfig",
+          "platform": "web-desktop",
+          "buildPath": "project://build",
+          "debug": false,
+          "buildMode": "normal",
+          "mangleProperties": false,
+          "md5Cache": false,
+          "skipCompressTexture": false,
+          "sourceMaps": false,
+          "overwriteProjectSettings": {
+            "includeModules": {
+              "gfx-webgl2": "on",
+              "physics": "inherit-project-setting",
+              "physics-2d": "inherit-project-setting"
+            },
+            "macroConfig": {
+              "cleanupImageCache": "inherit-project-setting"
+            }
+          },
+          "nativeCodeBundleMode": "both",
+          "polyfills": {
+            "asyncFunctions": true
+          },
+          "experimentalEraseModules": false,
+          "startSceneAssetBundle": false,
+          "bundleConfigs": [],
+          "inlineEnum": true,
+          "useBuiltinServer": false,
+          "md5CacheOptions": {
+            "excludes": [],
+            "includes": [],
+            "replaceOnly": [],
+            "handleTemplateMd5Link": true
+          },
+          "mainBundleIsRemote": false,
+          "mainBundleCompressionType": "merge_dep",
+          "useSplashScreen": true,
+          "bundleCommonChunk": false,
+          "packAutoAtlas": true,
+          "startScene": "0962fd54-dc49-4512-b630-f0c3743d4bee",
+          "outputName": "web-desktop",
+          "taskName": "web-desktop",
+          "scenes": [
+            {
+              "url": "db://assets/scenes/MainMenu.scene",
+              "uuid": "0962fd54-dc49-4512-b630-f0c3743d4bee"
+            },
+            {
+              "url": "db://assets/scenes/CharSelect.scene",
+              "uuid": "ea4ed983-768a-44f6-a828-7c34c98a6b6c"
+            },
+            {
+              "url": "db://assets/scenes/InitialReward.scene",
+              "uuid": "78383c14-3acf-4af1-b910-43607de916ea"
+            },
+            {
+              "url": "db://assets/scenes/GameMap.scene",
+              "uuid": "da6f983c-e960-4a1a-a16b-62ce59bab27f"
+            },
+            {
+              "url": "db://assets/scenes/Event.scene",
+              "uuid": "ca1e1696-dae0-4652-b731-ac0bb90c2665"
+            },
+            {
+              "url": "db://assets/scenes/Battle.scene",
+              "uuid": "a64a1b47-a671-4d0d-85ff-4a7a7b496e67"
+            },
+            {
+              "url": "db://assets/scenes/PartnerStage.scene",
+              "uuid": "d16e9331-0eb1-466d-ad79-a23e3d13b4ee"
+            }
+          ],
+          "wasmCompressionMode": false,
+          "binGroupConfig": {
+            "threshold": 16,
+            "enable": false
+          },
+          "packages": {},
+          "__version__": "1.3.9",
+          "logDest": "project://temp/builder/log/web-desktop2026-6-17 19-22.log"
+        },
+        "time": "2026-6-17 19:36:36",
+        "dirty": false
+      },
+      "1782230412389": {
+        "type": "build",
+        "id": "1782230412389",
+        "progress": 1,
+        "state": "success",
+        "stage": "build",
+        "message": "2026-6-24 00:01:53 build success in 1 min 41 s!",
+        "detailMessage": "// ---- build task cocos-service：onAfterBuild ----\r",
+        "options": {
+          "name": "KingdomSpire",
+          "server": "",
+          "engineModulesConfigKey": "defaultConfig",
+          "platform": "web-desktop",
+          "buildPath": "project://build",
+          "debug": false,
+          "buildMode": "normal",
+          "mangleProperties": false,
+          "md5Cache": false,
+          "skipCompressTexture": false,
+          "sourceMaps": false,
+          "overwriteProjectSettings": {
+            "includeModules": {
+              "gfx-webgl2": "on",
+              "physics": "inherit-project-setting",
+              "physics-2d": "inherit-project-setting"
+            },
+            "macroConfig": {
+              "cleanupImageCache": "inherit-project-setting"
+            }
+          },
+          "nativeCodeBundleMode": "both",
+          "polyfills": {
+            "asyncFunctions": true
+          },
+          "experimentalEraseModules": false,
+          "startSceneAssetBundle": false,
+          "bundleConfigs": [],
+          "inlineEnum": true,
+          "useBuiltinServer": false,
+          "md5CacheOptions": {
+            "excludes": [],
+            "includes": [],
+            "replaceOnly": [],
+            "handleTemplateMd5Link": true
+          },
+          "mainBundleIsRemote": false,
+          "mainBundleCompressionType": "merge_dep",
+          "useSplashScreen": true,
+          "bundleCommonChunk": false,
+          "packAutoAtlas": true,
+          "startScene": "0962fd54-dc49-4512-b630-f0c3743d4bee",
+          "outputName": "web-desktop-001",
+          "taskName": "web-desktop-001",
+          "scenes": [
+            {
+              "url": "db://assets/scenes/MainMenu.scene",
+              "uuid": "0962fd54-dc49-4512-b630-f0c3743d4bee"
+            },
+            {
+              "url": "db://assets/scenes/CharSelect.scene",
+              "uuid": "ea4ed983-768a-44f6-a828-7c34c98a6b6c"
+            },
+            {
+              "url": "db://assets/scenes/InitialReward.scene",
+              "uuid": "78383c14-3acf-4af1-b910-43607de916ea"
+            },
+            {
+              "url": "db://assets/scenes/GameMap.scene",
+              "uuid": "da6f983c-e960-4a1a-a16b-62ce59bab27f"
+            },
+            {
+              "url": "db://assets/scenes/Event.scene",
+              "uuid": "ca1e1696-dae0-4652-b731-ac0bb90c2665"
+            },
+            {
+              "url": "db://assets/scenes/Battle.scene",
+              "uuid": "a64a1b47-a671-4d0d-85ff-4a7a7b496e67"
+            },
+            {
+              "url": "db://assets/scenes/PartnerStage.scene",
+              "uuid": "d16e9331-0eb1-466d-ad79-a23e3d13b4ee"
+            }
+          ],
+          "wasmCompressionMode": false,
+          "binGroupConfig": {
+            "threshold": 16,
+            "enable": false
+          },
+          "packages": {},
+          "__version__": "1.3.9",
+          "logDest": "project://temp/builder/log/web-desktop2026-6-24 00-00.log"
+        },
+        "time": "2026-6-24 00:00:12",
+        "dirty": false
+      }
+    }
+  }
+}

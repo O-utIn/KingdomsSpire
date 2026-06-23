@@ -47,6 +47,7 @@ export class MainMenuManager extends Component {
     }
 
     public onSinglePlayerClick(): void {
+        GlobalData.instance.resetMapProgress();
         director.loadScene('CharSelect', (err) => {
             if (err) {
                 console.error('跳转选角页面失败', err);
