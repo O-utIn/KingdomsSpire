@@ -12,6 +12,7 @@ import {
     SpriteFrame,
     UITransform,
     Vec2,
+    view,
 } from 'cc';
 import { SCENE_GAME_MAP } from './GameConfig';
 import { GlobalData, CharacterPackage } from './GlobalData';
@@ -51,9 +52,31 @@ export class InitialRewardManager extends Component {
     private _setupDone = false;
 
     onLoad() {
+        this.applyThemeBackground();
         this.prepareRunState();
         // 晚一帧再写 UI，避免与 Layout 同一帧抢顺序；运行后才会执行（编辑器静态场景里不会跑）
         this.scheduleOnce(() => this.setupRewardRows(), 0);
+    }
+
+    private applyThemeBackground(): void {
+        let bg = this.node.getChildByName('NeowBg') ?? this.node.getChildByName('ThemeBackground');
+        if (!bg) {
+            bg = new Node('ThemeBackground');
+            this.node.addChild(bg);
+        }
+        bg.setSiblingIndex(0);
+        bg.layer = this.node.layer;
+        const visible = view.getVisibleSize();
+        const ut = bg.getComponent(UITransform) ?? bg.addComponent(UITransform);
+        ut.setContentSize(visible.width, visible.height);
+        const sprite = bg.getComponent(Sprite) ?? bg.addComponent(Sprite);
+        sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+        sprite.color = Color.WHITE;
+        resources.load('textures/background/bg1/spriteFrame', SpriteFrame, (err, sf) => {
+            if (!err && sf && bg.isValid) {
+                sprite.spriteFrame = sf;
+            }
+        });
     }
 
     private prepareRunState(): void {
