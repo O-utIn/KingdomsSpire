@@ -75,6 +75,12 @@ interface GeneratedEdge {
     to: GeneratedPoint;
 }
 
+interface MapGenerationParams {
+    difficulty: number;
+    lowerShopFloorLimit: number;
+    upperShopFloorStart: number;
+}
+
 interface ShopPurchaseBinding {
     buy: (event?: EventTouch | EventMouse) => void;
     button: Node;
@@ -223,8 +229,28 @@ function assignBalancedNodeKinds(graph: GraphNode[], random: () => number): void
     }
 }
 
+function ensureShopInFloorRange(graph: GraphNode[], startFloor: number, endFloor: number, random: () => number): void {
+    const nodes = graph.filter((node) => node.floor >= startFloor && node.floor <= endFloor);
+    if (nodes.some((node) => node.kind === 'shop')) {
+        return;
+    }
+    const candidates = nodes.filter((node) => node.kind !== 'start' && node.kind !== 'boss' && node.kind !== 'rest');
+    const picked = candidates[randomInt(0, Math.max(0, candidates.length - 1), random)];
+    if (picked) {
+        picked.kind = 'shop';
+    }
+}
+
+function applyMapGenerationParams(graph: GraphNode[], params: MapGenerationParams | undefined, random: () => number): void {
+    if (!params) {
+        return;
+    }
+    ensureShopInFloorRange(graph, 1, Math.max(1, params.lowerShopFloorLimit), random);
+    ensureShopInFloorRange(graph, Math.max(1, params.upperShopFloorStart), MAP_PATH_FLOORS, random);
+}
+
 /** 按路径逐层生长地图，避免预先生成完整矩阵和路径交叉。 */
-export function generateMapGraph(random: () => number = Math.random): GraphNode[] {
+export function generateMapGraph(random: () => number = Math.random, params?: MapGenerationParams): GraphNode[] {
     const connectionMap = new Map<string, number>();
     const points = new Map<string, GeneratedPoint>();
     const edges = new Map<string, GeneratedEdge>();
@@ -309,6 +335,7 @@ export function generateMapGraph(random: () => number = Math.random): GraphNode[
         graph[toId].parents.push(fromId);
     }
     assignBalancedNodeKinds(graph, random);
+    applyMapGenerationParams(graph, params, random);
     return graph;
 }
 
@@ -321,7 +348,7 @@ function ensureMapGraphForCurrentRun(): void {
     if (MAP_GRAPH.length > 0 && MAP_GRAPH_GENERATION === generation) {
         return;
     }
-    MAP_GRAPH = generateMapGraph();
+    MAP_GRAPH = generateMapGraph(Math.random, GlobalData.instance.runMapParams);
     MAX_FLOOR = Math.max(...MAP_GRAPH.map((n) => n.floor));
     MAP_GRAPH_GENERATION = generation;
 }
@@ -461,6 +488,8 @@ export class MapScreenManager extends Component {
     private _pathGraphics: Graphics | null = null;
     private _pingRoot: Node | null = null;
     private _modalRoot: Node | null = null;
+    private _confirmDialogOpen = false;
+    private _suppressShopPurchaseUntil = 0;
 
     async start() {
         ensureMapGraphForCurrentRun();
@@ -549,26 +578,28 @@ export class MapScreenManager extends Component {
         tLb.isBold = true;
         tLb.color = new Color(230, 235, 245, 255);
 
-        let y = 78;
+        let y = 82;
+        const legendIconSize = 22;
         for (const row of LEGEND_ROWS) {
             const sf = await loadSpriteFrame(row.path);
             const rowN = new Node(`Leg_${row.text}`);
             panel.addChild(rowN);
             rowN.setPosition(-68, y, 0);
-            y -= 36;
+            y -= 32;
             if (sf) {
                 const ic = new Node('Ic');
                 rowN.addChild(ic);
                 const iUt = ic.addComponent(UITransform);
-                iUt.setContentSize(28, 28);
+                iUt.setContentSize(legendIconSize, legendIconSize);
                 ic.setPosition(0, 0, 0);
                 const iSp = ic.addComponent(Sprite);
-                iSp.spriteFrame = sf;
                 iSp.sizeMode = Sprite.SizeMode.CUSTOM;
+                iSp.spriteFrame = sf;
+                iUt.setContentSize(legendIconSize, legendIconSize);
             }
             const lbN = new Node('Txt');
             rowN.addChild(lbN);
-            lbN.setPosition(38, 0, 0);
+            lbN.setPosition(34, 0, 0);
             const lbUt = lbN.addComponent(UITransform);
             lbUt.setContentSize(92, 30);
             const lb = lbN.addComponent(Label);
@@ -1763,17 +1794,21 @@ export class MapScreenManager extends Component {
             const x = startX + (index % columns) * gapX;
             const y = startY - Math.floor(index / columns) * gapY;
             const button = this.makeModalButton(picker, `Remove_${cardId}_${index}`, `${title}  x${count}`, 188, 86, x, y, () => {
-                const hero = gd.selectedChar;
-                const deckIndex = gd.deckIds.indexOf(cardId);
-                if (!hero || hero.gold < price || deckIndex < 0) {
-                    return;
-                }
-                hero.gold -= price;
-                gd.deckIds.splice(deckIndex, 1);
-                gd.deckCount = gd.deckIds.length;
-                gd.shopRemovalCount += 1;
-                overlay.destroy();
-                onRemoved(title);
+                this.showConfirmDialog('确认移除', `是否花费 ${price} 金币移除《${title}》？`, () => {
+                    const hero = gd.selectedChar;
+                    const deckIndex = gd.deckIds.indexOf(cardId);
+                    if (!hero || hero.gold < price || deckIndex < 0) {
+                        this.showInfoDialog('移除失败', '金币不足或该卡牌已不在牌组中。');
+                        return;
+                    }
+                    hero.gold -= price;
+                    gd.deckIds.splice(deckIndex, 1);
+                    gd.deckCount = gd.deckIds.length;
+                    gd.shopRemovalCount += 1;
+                    overlay.destroy();
+                    this.showInfoDialog('移除成功', `已移除《${title}》。`);
+                    onRemoved(title);
+                });
             }, true);
             const label = button.getChildByName('Label')?.getComponent(Label);
             if (label) {
@@ -1801,7 +1836,6 @@ export class MapScreenManager extends Component {
             return;
         }
         target.on(Node.EventType.TOUCH_END, purchase.buy, this);
-        target.on(Node.EventType.MOUSE_UP, purchase.buy, this);
     }
 
     private addShopHoverInfo(parent: Node, title: string, effectText: string): void {
@@ -1853,17 +1887,82 @@ export class MapScreenManager extends Component {
             if (completed) {
                 return;
             }
-            if (onBuy()) {
-                completed = true;
-                btn.active = false;
-                sold.active = true;
+            if (this._confirmDialogOpen || Date.now() < this._suppressShopPurchaseUntil) {
+                return;
             }
+            this.showConfirmDialog('确认购买', `是否花费 ${price} 金币购买？`, () => {
+                if (completed) {
+                    return;
+                }
+                if (onBuy()) {
+                    completed = true;
+                    btn.active = false;
+                    sold.active = true;
+                    this.showInfoDialog('购买成功', '商品已加入本局资源。');
+                } else {
+                    this.showInfoDialog('购买失败', '请检查金币、是否已拥有或当前节点状态。');
+                }
+            });
         };
         if (enabled) {
             btn.on(Node.EventType.TOUCH_END, buy, this);
-            btn.on(Node.EventType.MOUSE_UP, buy, this);
         }
         return { buy, button: btn, sold };
+    }
+
+    private showInfoDialog(title: string, body: string): void {
+        this.showConfirmDialog(title, body, undefined, '确定');
+    }
+
+    private showConfirmDialog(title: string, body: string, onConfirm?: () => void, confirmText = '确认'): void {
+        if (this._confirmDialogOpen) {
+            return;
+        }
+        this._confirmDialogOpen = true;
+        const vs = view.getVisibleSize();
+        const root = new Node('ConfirmOverlay');
+        this.node.addChild(root);
+        root.setSiblingIndex(this.node.children.length - 1);
+        root.addComponent(BlockInputEvents);
+        root.addComponent(UITransform).setContentSize(vs.width, vs.height);
+        const swallow = (event?: EventTouch | EventMouse) => {
+            const evt = event as unknown as { propagationStopped?: boolean; stopPropagation?: () => void } | undefined;
+            if (evt) {
+                evt.propagationStopped = true;
+                evt.stopPropagation?.();
+            }
+        };
+        root.on(Node.EventType.TOUCH_END, swallow, this);
+        root.on(Node.EventType.MOUSE_UP, swallow, this);
+        const shade = root.addComponent(Graphics);
+        shade.fillColor = new Color(0, 0, 0, 145);
+        shade.rect(-vs.width * 0.5, -vs.height * 0.5, vs.width, vs.height);
+        shade.fill();
+
+        const panel = new Node('ConfirmPanel');
+        root.addChild(panel);
+        panel.addComponent(UITransform).setContentSize(520, 270);
+        const pg = panel.addComponent(Graphics);
+        paintRoundRect(pg, 520, 270, new Color(22, 28, 38, 252), new Color(214, 176, 96, 255), 3);
+        this.addModalLabel(panel, 'Title', 440, 40, 0, 88, 28, new Color(255, 220, 128, 255), Label.HorizontalAlign.CENTER).string = title;
+        const bodyLb = this.addModalLabel(panel, 'Body', 430, 88, 0, 24, 19, new Color(225, 232, 244, 255), Label.HorizontalAlign.CENTER);
+        bodyLb.lineHeight = 25;
+        bodyLb.string = body;
+
+        const close = () => {
+            if (root.isValid) {
+                root.destroy();
+            }
+            this._confirmDialogOpen = false;
+            this._suppressShopPurchaseUntil = Date.now() + 250;
+        };
+        this.makeModalButton(panel, 'ConfirmYes', confirmText, 150, 48, onConfirm ? -92 : 0, -82, () => {
+            close();
+            onConfirm?.();
+        }, true);
+        if (onConfirm) {
+            this.makeModalButton(panel, 'ConfirmNo', '取消', 150, 48, 92, -82, close, true);
+        }
     }
 
     private createModal(name: string, title: string, subtitle: string): { root: Node; panel: Node } {
@@ -1918,7 +2017,22 @@ export class MapScreenManager extends Component {
         const lb = this.addModalLabel(btn, 'Label', w - 20, h - 10, 0, 0, 20, enabled ? new Color(245, 250, 255, 255) : new Color(165, 172, 184, 255), Label.HorizontalAlign.CENTER);
         lb.string = text;
         if (enabled) {
-            btn.on(Node.EventType.TOUCH_END, onClick, this);
+            let lastClickAt = 0;
+            const handle = (event?: EventTouch | EventMouse) => {
+                const evt = event as unknown as { propagationStopped?: boolean; stopPropagation?: () => void } | undefined;
+                if (evt) {
+                    evt.propagationStopped = true;
+                    evt.stopPropagation?.();
+                }
+                const now = Date.now();
+                if (now - lastClickAt < 150) {
+                    return;
+                }
+                lastClickAt = now;
+                onClick();
+            };
+            btn.on(Node.EventType.TOUCH_END, handle, this);
+            btn.on(Node.EventType.MOUSE_UP, handle, this);
         }
         return btn;
     }

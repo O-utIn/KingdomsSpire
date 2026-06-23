@@ -7,6 +7,7 @@ import {
     Sprite,
     SpriteFrame,
     Button,
+    BlockInputEvents,
     resources,
     UITransform,
     Color,
@@ -278,15 +279,14 @@ export class EventManager extends Component {
         // 应用结果
         this.applyResult(result);
 
-        // 如果是战斗，进入战斗场景
-        if (result.type === 'combat') {
-            GlobalData.instance.prepareEncounter('monster', -1);
-            director.loadScene(SCENE_BATTLE);
-            return;
-        }
-
-        // 否则返回地图
-        this.returnToMap();
+        this.showResultFeedback(result, () => {
+            if (result.type === 'combat') {
+                GlobalData.instance.prepareEncounter('monster', -1);
+                director.loadScene(SCENE_BATTLE);
+                return;
+            }
+            this.returnToMap();
+        });
     }
 
     /** 应用事件结果到玩家状态 */
@@ -326,6 +326,87 @@ export class EventManager extends Component {
         RunHudManager.startRun();
 
         console.log(`[Event] ${result.description}`);
+    }
+
+    private showResultFeedback(result: EventResult, onDone: () => void): void {
+        const visible = view.getVisibleSize();
+        const overlay = new Node('EventResultOverlay');
+        this.node.addChild(overlay);
+        overlay.layer = Layers.Enum.UI_2D;
+        overlay.addComponent(BlockInputEvents);
+        overlay.addComponent(UITransform).setContentSize(visible.width, visible.height);
+        const shade = overlay.addComponent(Graphics);
+        shade.fillColor = new Color(0, 0, 0, 150);
+        shade.rect(-visible.width / 2, -visible.height / 2, visible.width, visible.height);
+        shade.fill();
+
+        const panel = new Node('EventResultPanel');
+        overlay.addChild(panel);
+        panel.layer = Layers.Enum.UI_2D;
+        panel.addComponent(UITransform).setContentSize(720, 340);
+        const bg = panel.addComponent(Graphics);
+        bg.fillColor = new Color(26, 32, 44, 252);
+        bg.roundRect(-360, -170, 720, 340, 12);
+        bg.fill();
+        bg.lineWidth = 3;
+        bg.strokeColor = new Color(214, 176, 96, 255);
+        bg.roundRect(-360, -170, 720, 340, 12);
+        bg.stroke();
+
+        const title = new Node('Title');
+        panel.addChild(title);
+        title.layer = Layers.Enum.UI_2D;
+        title.setPosition(0, 112, 0);
+        title.addComponent(UITransform).setContentSize(640, 42);
+        const titleLabel = title.addComponent(Label);
+        titleLabel.string = '事件结果';
+        titleLabel.fontSize = 30;
+        titleLabel.color = new Color(255, 220, 128, 255);
+        titleLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+
+        const body = new Node('Body');
+        panel.addChild(body);
+        body.layer = Layers.Enum.UI_2D;
+        body.setPosition(0, 18, 0);
+        body.addComponent(UITransform).setContentSize(620, 126);
+        const bodyLabel = body.addComponent(Label);
+        bodyLabel.string = this.describeResult(result);
+        bodyLabel.fontSize = 20;
+        bodyLabel.lineHeight = 28;
+        bodyLabel.color = new Color(224, 232, 244, 255);
+        bodyLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+        bodyLabel.verticalAlign = Label.VerticalAlign.CENTER;
+        bodyLabel.enableWrapText = true;
+        bodyLabel.overflow = Label.Overflow.SHRINK;
+
+        const btn = this.createChoiceButton({ text: '确定', result }, 180, 56);
+        panel.addChild(btn);
+        btn.setPosition(0, -122, 0);
+        btn.off(Node.EventType.TOUCH_END);
+        btn.on(Node.EventType.TOUCH_END, () => {
+            overlay.destroy();
+            onDone();
+        }, this);
+    }
+
+    private describeResult(result: EventResult): string {
+        if (result.description) {
+            return result.description;
+        }
+        const value = result.value ?? 0;
+        const data = result.data ? ` ${result.data}` : '';
+        switch (result.type) {
+            case 'gain_gold': return `获得 ${value} 金币`;
+            case 'lose_gold': return `失去 ${value} 金币`;
+            case 'gain_hp': return `回复 ${value} 点生命`;
+            case 'lose_hp': return `失去 ${value} 点生命`;
+            case 'gain_max_hp': return `最大生命提高 ${value}`;
+            case 'gain_card': return `获得 ${value || 1} 张卡牌${data}`;
+            case 'remove_card': return `移除 ${value || 1} 张卡牌${data}`;
+            case 'gain_relic': return `获得遗物${data}`;
+            case 'combat': return '遭遇敌人，确认后进入战斗';
+            default: return '事件已响应';
+        }
     }
 
     private gainEventCards(result: EventResult): void {
