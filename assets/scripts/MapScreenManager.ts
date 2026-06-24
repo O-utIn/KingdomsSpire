@@ -131,23 +131,31 @@ function weightedKind(candidates: readonly MapNodeKind[], floor: number, random:
 function chooseLateRouteShops(graph: GraphNode[], random: () => number): Set<number> {
     const shopIds = new Set<number>();
     const routesByEnd = new Map<number, number[][]>();
-    for (const start of graph.filter((node) => node.floor === 12)) {
-        const route: number[] = [];
-        let currentId = start.id;
-        for (let floor = 12; floor <= 14; floor++) {
-            const current = graph[currentId];
-            if (!current || current.floor !== floor) {
-                break;
-            }
-            route.push(currentId);
-            currentId = current.children[0] ?? -1;
+
+    const walk = (nodeId: number, route: number[]): void => {
+        const current = graph[nodeId];
+        if (!current || current.floor < 12 || current.floor > 14) {
+            return;
         }
-        const endId = route[route.length - 1];
-        if (endId !== undefined) {
+        const nextRoute = [...route, nodeId];
+        const nextIds = current.children.filter((id) => {
+            const child = graph[id];
+            return child && child.floor >= 12 && child.floor <= 14;
+        });
+        if (current.floor === 14 || nextIds.length === 0) {
+            const endId = nextRoute[nextRoute.length - 1];
             const routes = routesByEnd.get(endId) ?? [];
-            routes.push(route);
+            routes.push(nextRoute);
             routesByEnd.set(endId, routes);
+            return;
         }
+        for (const nextId of nextIds) {
+            walk(nextId, nextRoute);
+        }
+    };
+
+    for (const start of graph.filter((node) => node.floor === 12)) {
+        walk(start.id, []);
     }
 
     for (const routes of routesByEnd.values()) {
@@ -398,7 +406,7 @@ function isValidMapGraph(graph: GraphNode[]): boolean {
     return Array.isArray(graph)
         && graph.length > 1
         && graph.every((node, index) => isValidGraphNode(node, index, graph.length))
-        && graph[0]?.kind === 'start'
+        && graph.some((node) => node.kind === 'start' && node.floor === 0)
         && graph.some((node) => node.kind === 'boss')
         && graph.some((node) => node.children.length > 0);
 }
