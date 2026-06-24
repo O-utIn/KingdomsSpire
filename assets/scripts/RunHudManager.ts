@@ -91,7 +91,7 @@ export class RunHudManager extends Component {
             cam.far = 2000;
             cam.priority = 100;
             cam.clearFlags = Camera.ClearFlag.DEPTH_ONLY;
-            cam.visibility = Layers.BitMask.UI_2D;
+            cam.visibility = Layers.BitMask.UI_2D | Layers.BitMask.DEFAULT;
 
             const canvas = root.addComponent(Canvas);
             canvas.cameraComponent = cam;

@@ -37,6 +37,13 @@ function paintRoundRect(g: Graphics, w: number, h: number, fill: Color, stroke?:
     }
 }
 
+function applyLayerDeep(node: Node, layer: number): void {
+    node.layer = layer;
+    for (const child of node.children) {
+        applyLayerDeep(child, layer);
+    }
+}
+
 function loadSpriteFrame(resourcesPath: string): Promise<SpriteFrame | null> {
     const path = resourcesPath.endsWith('/spriteFrame') ? resourcesPath : `${resourcesPath}/spriteFrame`;
     return new Promise((resolve) => {
@@ -106,7 +113,7 @@ export class DeckPreviewManager extends Component {
             cam.far = 2000;
             cam.priority = 110;
             cam.clearFlags = Camera.ClearFlag.DEPTH_ONLY;
-            cam.visibility = Layers.BitMask.UI_2D;
+            cam.visibility = Layers.BitMask.UI_2D | Layers.BitMask.DEFAULT;
 
             const canvas = root.addComponent(Canvas);
             canvas.cameraComponent = cam;
@@ -141,6 +148,7 @@ export class DeckPreviewManager extends Component {
         const cam = this.node.getChildByName('DeckPreviewCamera')?.getComponent(Camera);
         if (cam) {
             cam.orthoHeight = Math.max(vs.height * 0.5, 320);
+            cam.visibility |= Layers.BitMask.UI_2D | Layers.BitMask.DEFAULT | this.node.layer;
         }
     }
 
@@ -206,6 +214,7 @@ export class DeckPreviewManager extends Component {
                 `还有 ${grouped.length - visibleRows * cols} 种卡牌未显示。`;
         }
 
+        applyLayerDeep(overlay, Layers.Enum.UI_2D);
         this._overlay = overlay;
     }
 

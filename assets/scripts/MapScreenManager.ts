@@ -10,6 +10,7 @@ import {
     EventTouch,
     Graphics,
     Label,
+    Layers,
     Node,
     resources,
     Sprite,
@@ -564,6 +565,7 @@ export class MapScreenManager extends Component {
             cam.orthoHeight = Math.max(vs.height * 0.5, 320);
             cam.near = 0;
             cam.far = 2000;
+            cam.visibility |= Layers.BitMask.UI_2D | Layers.BitMask.DEFAULT | this.node.layer;
         }
     }
 
