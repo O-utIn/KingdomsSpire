@@ -18,6 +18,7 @@ import {
 } from 'cc';
 import { GlobalData } from './GlobalData';
 import { getCardDef, type CardDef, type CardId } from './cards/CardDef';
+import { getStarterDeckForCharacter } from './cards/StarterDeck';
 
 const { ccclass } = _decorator;
 
@@ -172,12 +173,13 @@ export class DeckPreviewManager extends Component {
         paintRoundRect(pG, panelW, panelH, new Color(18, 24, 34, 248), new Color(214, 176, 96, 255), 3);
 
         const gd = GlobalData.instance;
+        const deckIds = gd.deckIds.length > 0 ? gd.deckIds : getStarterDeckForCharacter(gd.selectedCharId);
         this.addLabel(panel, 'Title', panelW - 80, 48, 0, panelH * 0.5 - 46, 34, new Color(255, 220, 128, 255)).string = '牌组预览';
         this.addLabel(panel, 'Sub', panelW - 120, 30, 0, panelH * 0.5 - 84, 18, new Color(214, 224, 236, 255)).string =
             `当前牌组 ${gd.deckIds.length || gd.deckCount} 张    用时 ${gd.getRunElapsedText()}`;
         this.makeButton(panel, 'Close', '关闭', 120, 42, panelW * 0.5 - 82, panelH * 0.5 - 52, () => this.closePreview());
 
-        const grouped = this.groupDeck(gd.deckIds);
+        const grouped = this.groupDeck(deckIds);
         const cardW = 150;
         const cardH = 206;
         const gapX = 22;

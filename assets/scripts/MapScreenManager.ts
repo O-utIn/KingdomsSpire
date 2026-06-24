@@ -25,6 +25,7 @@ import { GlobalData } from './GlobalData';
 import { RunHudManager } from './RunHudManager';
 import type { CardDef, CardId } from './cards/CardDef';
 import { getCardDef } from './cards/CardDef';
+import { getStarterDeckForCharacter } from './cards/StarterDeck';
 import type { RelicId } from './relics/RelicDef';
 import { getRelicDef } from './relics/RelicDef';
 
@@ -470,6 +471,13 @@ function paintRoundRect(g: Graphics, w: number, h: number, fill: Color, stroke?:
     }
 }
 
+function applyLayerDeep(node: Node, layer: number): void {
+    node.layer = layer;
+    for (const child of node.children) {
+        applyLayerDeep(child, layer);
+    }
+}
+
 @ccclass('MapScreenManager')
 export class MapScreenManager extends Component {
     private _contentRoot: Node | null = null;
@@ -493,6 +501,7 @@ export class MapScreenManager extends Component {
 
     async start() {
         ensureMapGraphForCurrentRun();
+        this.ensureStarterDeck();
         this.syncCanvasCameraToScreen();
         if (GlobalData.instance.mapFloorCount <= 0) {
             GlobalData.instance.mapCurrentNodeId = 0;
@@ -504,13 +513,30 @@ export class MapScreenManager extends Component {
         this.refreshRunHud();
         /** 先铺地图再叠 UI，避免 MapContent 盖住顶栏（参考图层次） */
         await this.buildMapVisuals();
+        if (this._contentRoot) {
+            applyLayerDeep(this._contentRoot, this.node.layer);
+        }
         this.setMapScale(MAP_INITIAL_SCALE);
         this.centerMapOnNode(GlobalData.instance.mapCurrentNodeId);
         await this.buildLegendWithIcons();
+        const legend = this.node.getChildByName('MapLegend');
+        if (legend) {
+            applyLayerDeep(legend, this.node.layer);
+        }
         this.syncCanvasCameraToScreen();
         this.redrawEdgeLines();
         this.redrawPathLine();
         this.refreshPingAndInteract();
+    }
+
+    private ensureStarterDeck(): void {
+        const gd = GlobalData.instance;
+        if (gd.deckIds.length > 0) {
+            gd.deckCount = gd.deckIds.length;
+            return;
+        }
+        gd.deckIds = getStarterDeckForCharacter(gd.selectedCharId);
+        gd.deckCount = gd.deckIds.length;
     }
 
     onDestroy(): void {
