@@ -341,6 +341,76 @@ export function generateMapGraph(random: () => number = Math.random, params?: Ma
     return graph;
 }
 
+function fallbackNodeKind(floor: number): MapNodeKind {
+    if (floor === 0) {
+        return 'start';
+    }
+    if (floor === MAP_BOSS_FLOOR) {
+        return 'boss';
+    }
+    if (floor === 5 || floor === 12) {
+        return 'shop';
+    }
+    if (floor === 7 || floor === MAP_PATH_FLOORS) {
+        return 'rest';
+    }
+    if (floor === 10) {
+        return 'elite';
+    }
+    if (floor === 3 || floor === 9 || floor === 13) {
+        return 'event';
+    }
+    return 'monster';
+}
+
+function createFallbackMapGraph(): GraphNode[] {
+    const graph: GraphNode[] = [];
+    for (let floor = 0; floor <= MAP_BOSS_FLOOR; floor++) {
+        const isFixedCenter = floor === 0 || floor === MAP_BOSS_FLOOR;
+        const x = isFixedCenter ? 0 : ((floor % 3) - 1) * 110;
+        graph.push({
+            id: floor,
+            floor,
+            x,
+            y: (floor - MAP_BOSS_FLOOR * 0.5) * MAP_FLOOR_GAP,
+            kind: fallbackNodeKind(floor),
+            parents: floor === 0 ? [] : [floor - 1],
+            children: floor === MAP_BOSS_FLOOR ? [] : [floor + 1],
+        });
+    }
+    return graph;
+}
+
+function isValidGraphNode(node: GraphNode | undefined, index: number, graphLength: number): node is GraphNode {
+    const inRange = (id: number): boolean => Number.isInteger(id) && id >= 0 && id < graphLength;
+    return !!node
+        && node.id === index
+        && Number.isFinite(node.floor)
+        && Number.isFinite(node.x)
+        && Number.isFinite(node.y)
+        && Array.isArray(node.parents)
+        && Array.isArray(node.children)
+        && node.parents.every(inRange)
+        && node.children.every(inRange);
+}
+
+function isValidMapGraph(graph: GraphNode[]): boolean {
+    return Array.isArray(graph)
+        && graph.length > 1
+        && graph.every((node, index) => isValidGraphNode(node, index, graph.length))
+        && graph[0]?.kind === 'start'
+        && graph.some((node) => node.kind === 'boss')
+        && graph.some((node) => node.children.length > 0);
+}
+
+function getMaxFloorFromGraph(graph: GraphNode[]): number {
+    const floors = graph.map((node) => node.floor).filter((floor) => Number.isFinite(floor));
+    if (floors.length === 0) {
+        return MAP_BOSS_FLOOR;
+    }
+    return Math.max(...floors);
+}
+
 let MAP_GRAPH: GraphNode[] = [];
 let MAX_FLOOR = 0;
 let MAP_GRAPH_GENERATION = -1;
@@ -350,8 +420,22 @@ function ensureMapGraphForCurrentRun(): void {
     if (MAP_GRAPH.length > 0 && MAP_GRAPH_GENERATION === generation) {
         return;
     }
-    MAP_GRAPH = generateMapGraph(Math.random, GlobalData.instance.runMapParams);
-    MAX_FLOOR = Math.max(...MAP_GRAPH.map((n) => n.floor));
+    try {
+        MAP_GRAPH = generateMapGraph(Math.random, GlobalData.instance.runMapParams);
+    } catch (err) {
+        console.warn('[MapScreenManager] map generation failed, using fallback graph', err);
+        MAP_GRAPH = createFallbackMapGraph();
+    }
+    if (!isValidMapGraph(MAP_GRAPH)) {
+        console.warn('[MapScreenManager] invalid map graph, using fallback graph');
+        MAP_GRAPH = createFallbackMapGraph();
+    }
+    MAX_FLOOR = getMaxFloorFromGraph(MAP_GRAPH);
+    if (!Number.isFinite(MAX_FLOOR) || MAX_FLOOR <= 0) {
+        console.warn('[MapScreenManager] invalid max floor, using fallback graph');
+        MAP_GRAPH = createFallbackMapGraph();
+        MAX_FLOOR = MAP_BOSS_FLOOR;
+    }
     MAP_GRAPH_GENERATION = generation;
 }
 
@@ -504,11 +588,14 @@ export class MapScreenManager extends Component {
         ensureMapGraphForCurrentRun();
         this.ensureStarterDeck();
         this.syncCanvasCameraToScreen();
-        if (GlobalData.instance.mapFloorCount <= 0) {
-            GlobalData.instance.mapCurrentNodeId = 0;
-            GlobalData.instance.mapPathNodeIds = [0];
+        const gd = GlobalData.instance;
+        if (!MAP_GRAPH[gd.mapCurrentNodeId]) {
+            gd.mapCurrentNodeId = 0;
         }
-        GlobalData.instance.mapFloorCount = MAX_FLOOR + 1;
+        if (gd.mapPathNodeIds.length === 0 || gd.mapPathNodeIds.some((id) => !MAP_GRAPH[id])) {
+            gd.mapPathNodeIds = [gd.mapCurrentNodeId];
+        }
+        gd.mapFloorCount = Number.isFinite(MAX_FLOOR) && MAX_FLOOR > 0 ? MAX_FLOOR + 1 : MAP_BOSS_FLOOR + 1;
         GlobalAudioManager.playRunBgm();
         RunHudManager.startRun();
         this.refreshRunHud();
@@ -2127,7 +2214,9 @@ export class MapScreenManager extends Component {
     private refreshRunHud(): void {
         const cur = GlobalData.instance.mapCurrentNodeId;
         const floor = MAP_GRAPH[cur]?.floor ?? 0;
-        const maxF = GlobalData.instance.mapFloorCount || MAX_FLOOR + 1;
+        const maxF = Number.isFinite(GlobalData.instance.mapFloorCount) && GlobalData.instance.mapFloorCount > 0
+            ? GlobalData.instance.mapFloorCount
+            : (Number.isFinite(MAX_FLOOR) && MAX_FLOOR > 0 ? MAX_FLOOR + 1 : MAP_BOSS_FLOOR + 1);
         RunHudManager.setCenterText(`地图  楼层 ${floor + 1} / ${maxF}  ·  滚轮 / 双指缩放`);
     }
 }
