@@ -15,7 +15,7 @@ import {
     view,
     Widget,
 } from 'cc';
-import { SCENE_GAME_MAP, SCENE_MAIN_MENU } from './GameConfig';
+import { SCENE_MAIN_MENU } from './GameConfig';
 import { GlobalAudioManager } from './GlobalAudioManager';
 import { GlobalData } from './GlobalData';
 import type { CharacterPackage, CombatEncounterKind } from './GlobalData';
@@ -32,6 +32,7 @@ import { getStarterDeckForCharacter } from './cards/StarterDeck';
 import type { EnemyId, EnemyStatusCardAddition } from './enemies/EnemyDef';
 import { getEnemyDef } from './enemies/EnemyDef';
 import { createEnemyInstance, EnemyInstance } from './enemies/EnemyInstance';
+import { loadGameMapScene } from './SceneLoader';
 
 const { ccclass } = _decorator;
 
@@ -1430,7 +1431,7 @@ export class BattlePlaceholderManager extends Component {
 
     private backToMap(): void {
         GlobalData.instance.clearPendingEncounter();
-        director.loadScene(SCENE_GAME_MAP, (err) => {
+        loadGameMapScene((err) => {
             if (err) {
                 console.error('[BattlePlaceholderManager] 返回地图失败', err);
             }

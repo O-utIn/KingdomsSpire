@@ -16,7 +16,7 @@ import {
     Widget,
     view,
 } from 'cc';
-import { SCENE_BATTLE, SCENE_GAME_MAP } from '../GameConfig';
+import { SCENE_BATTLE } from '../GameConfig';
 import { GlobalAudioManager } from '../GlobalAudioManager';
 import { GlobalData } from '../GlobalData';
 import { RunHudManager } from '../RunHudManager';
@@ -24,6 +24,7 @@ import type { CardId } from '../cards/CardDef';
 import { getCardDef } from '../cards/CardDef';
 import type { RelicId } from '../relics/RelicDef';
 import { getRelicDef } from '../relics/RelicDef';
+import { loadGameMapScene } from '../SceneLoader';
 import { EventDef, EventChoice, EventResult } from './EventDef';
 import { EVENT_POOL } from './EventPool';
 
@@ -449,7 +450,7 @@ export class EventManager extends Component {
 
     /** 返回地图场景 */
     private returnToMap(): void {
-        director.loadScene(SCENE_GAME_MAP);
+        loadGameMapScene();
     }
 
     /** 随机选择事件 */

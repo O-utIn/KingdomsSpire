@@ -3,7 +3,6 @@ import {
     Button,
     Color,
     Component,
-    director,
     Label,
     Layout,
     Node,
@@ -14,14 +13,13 @@ import {
     Vec2,
     view,
 } from 'cc';
-import { SCENE_GAME_MAP } from './GameConfig';
 import { GlobalData, CharacterPackage } from './GlobalData';
-import { MapScreenManager } from './MapScreenManager';
 import { getRelicDef, getStarterRelicsForCharacter, NEOW_STARTER_RELIC_IDS } from './relics/RelicDef';
 import type { RelicDef, RelicId } from './relics/RelicDef';
 import { GlobalAudioManager } from './GlobalAudioManager';
 import { RunHudManager } from './RunHudManager';
 import { getStarterDeckForCharacter } from './cards/StarterDeck';
+import { loadGameMapScene } from './SceneLoader';
 const { ccclass, property } = _decorator;
 
 type CharRow = Pick<CharacterPackage, 'id' | 'name' | 'hp' | 'maxHp' | 'gold' | 'desc'>;
@@ -305,15 +303,9 @@ export class InitialRewardManager extends Component {
     }
 
     private goNext(): void {
-        director.loadScene(SCENE_GAME_MAP, (err) => {
+        loadGameMapScene((err) => {
             if (err) {
                 console.error('[InitialRewardManager] 进入地图场景失败（请确认构建里已包含 GameMap）', err);
-                return;
-            }
-            const scene = director.getScene();
-            const canvas = scene?.getChildByName('Canvas');
-            if (canvas && !canvas.getComponent(MapScreenManager)) {
-                canvas.addComponent(MapScreenManager);
             }
         });
     }
