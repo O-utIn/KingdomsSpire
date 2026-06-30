@@ -68,7 +68,7 @@ export const RELIC_DEFS: RelicDef[] = [
     {
         id: 'spirit_lantern',
         name: '引魂灯',
-        description: '每场战斗第一次通过【降临】覆盖虚影时，获得 1 点能量并抽 1 张牌。',
+        description: '每回合第一次通过【降临】覆盖虚影时，获得 1 点能量并抽 1 张牌。',
         iconPath: 'textures/relics/lantern',
         pool: 'ironclad',
         effects: { firstDescentCoverEnergy: 1, firstDescentCoverDraw: 1 },
