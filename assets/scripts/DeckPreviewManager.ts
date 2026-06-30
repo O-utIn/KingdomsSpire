@@ -231,10 +231,14 @@ export class DeckPreviewManager extends Component {
         for (const id of deckIds) {
             map.set(id, (map.get(id) ?? 0) + 1);
         }
-        return [...map.entries()]
-            .map(([id, count]) => {
-                const def = getCardDef(id);
-                return def ? { def, count } : null;
+        const entries: { id: CardId; count: number }[] = [];
+        map.forEach((count, id) => {
+            entries.push({ id, count });
+        });
+        return entries
+            .map((entry) => {
+                const def = getCardDef(entry.id);
+                return def ? { def, count: entry.count } : null;
             })
             .filter((entry): entry is { def: CardDef; count: number } => !!entry)
             .sort((a, b) => a.def.cost - b.def.cost || a.def.name.localeCompare(b.def.name, 'zh-Hans-CN'));
