@@ -1164,7 +1164,14 @@ export class BattlePlaceholderManager extends Component {
             if (energy > 0 || draw > 0) {
                 this._energy.add(energy);
                 const drawn = this._flow.draw(draw).length;
-                this.pushLog(`引魂灯生效，获得 ${energy} 能量并抽 ${drawn} 张牌。`);
+                const rewards: string[] = [];
+                if (energy > 0) {
+                    rewards.push(`获得 ${energy} 能量`);
+                }
+                if (draw > 0) {
+                    rewards.push(`抽 ${drawn} 张牌`);
+                }
+                this.pushLog(`引魂灯生效，${rewards.join('并')}。`);
             }
         }
         if (previous) {

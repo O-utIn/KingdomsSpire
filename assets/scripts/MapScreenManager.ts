@@ -158,12 +158,12 @@ function chooseLateRouteShops(graph: GraphNode[], random: () => number): Set<num
         walk(start.id, []);
     }
 
-    for (const routes of routesByEnd.values()) {
+    routesByEnd.forEach((routes) => {
         const commonIds = routes[0].filter((id) => routes.every((route) => route.includes(id)));
         if (commonIds.length > 0) {
             shopIds.add(commonIds[randomInt(0, commonIds.length - 1, random)]);
         }
-    }
+    });
     return shopIds;
 }
 
@@ -314,16 +314,19 @@ export function generateMapGraph(random: () => number = Math.random, params?: Ma
 
     const startPoint = { x: 4, y: 0 };
     const bossPoint = { x: 4, y: MAP_BOSS_FLOOR };
-    for (const startX of new Set(startXs)) {
+    const uniqueStartXs = startXs.filter((x, index) => startXs.indexOf(x) === index);
+    for (const startX of uniqueStartXs) {
         addEdge(startPoint, { x: startX, y: 1 });
     }
-    for (const point of points.values()) {
+    points.forEach((point) => {
         if (point.y === MAP_PATH_FLOORS) {
             addEdge(point, bossPoint);
         }
-    }
+    });
 
-    const orderedPoints = [...points.values()].sort((a, b) => a.y - b.y || a.x - b.x);
+    const orderedPoints: GeneratedPoint[] = [];
+    points.forEach((point) => orderedPoints.push(point));
+    orderedPoints.sort((a, b) => a.y - b.y || a.x - b.x);
     const idByPoint = new Map<string, number>();
     const graph = orderedPoints.map((point, id): GraphNode => {
         idByPoint.set(`${point.y},${point.x}`, id);
@@ -337,13 +340,13 @@ export function generateMapGraph(random: () => number = Math.random, params?: Ma
             children: [],
         };
     });
-    for (const edge of edges.values()) {
+    edges.forEach((edge) => {
         const fromId = idByPoint.get(`${edge.from.y},${edge.from.x}`);
         const toId = idByPoint.get(`${edge.to.y},${edge.to.x}`);
-        if (fromId === undefined || toId === undefined) continue;
+        if (fromId === undefined || toId === undefined) return;
         graph[fromId].children.push(toId);
         graph[toId].parents.push(fromId);
-    }
+    });
     assignBalancedNodeKinds(graph, random);
     applyMapGenerationParams(graph, params, random);
     return graph;
@@ -373,18 +376,69 @@ function fallbackNodeKind(floor: number): MapNodeKind {
 
 function createFallbackMapGraph(): GraphNode[] {
     const graph: GraphNode[] = [];
-    for (let floor = 0; floor <= MAP_BOSS_FLOOR; floor++) {
-        const isFixedCenter = floor === 0 || floor === MAP_BOSS_FLOOR;
-        const x = isFixedCenter ? 0 : ((floor % 3) - 1) * 110;
+    const idsByFloor: number[][] = [];
+    const addNode = (floor: number, column: number, kind: MapNodeKind): number => {
+        const id = graph.length;
         graph.push({
-            id: floor,
+            id,
             floor,
-            x,
+            x: column * 132,
             y: (floor - MAP_BOSS_FLOOR * 0.5) * MAP_FLOOR_GAP,
-            kind: fallbackNodeKind(floor),
-            parents: floor === 0 ? [] : [floor - 1],
-            children: floor === MAP_BOSS_FLOOR ? [] : [floor + 1],
+            kind,
+            parents: [],
+            children: [],
         });
+        if (!idsByFloor[floor]) {
+            idsByFloor[floor] = [];
+        }
+        idsByFloor[floor].push(id);
+        return id;
+    };
+    const connect = (fromId: number, toId: number): void => {
+        const from = graph[fromId];
+        const to = graph[toId];
+        if (!from || !to) {
+            return;
+        }
+        if (!from.children.includes(toId)) {
+            from.children.push(toId);
+        }
+        if (!to.parents.includes(fromId)) {
+            to.parents.push(fromId);
+        }
+    };
+
+    const startId = addNode(0, 0, 'start');
+    for (let floor = 0; floor <= MAP_BOSS_FLOOR; floor++) {
+        if (floor === 0 || floor === MAP_BOSS_FLOOR) {
+            continue;
+        }
+        for (const column of [-1, 0, 1]) {
+            addNode(floor, column, fallbackNodeKind(floor));
+        }
+    }
+    const bossId = addNode(MAP_BOSS_FLOOR, 0, 'boss');
+
+    for (const id of idsByFloor[1] ?? []) {
+        connect(startId, id);
+    }
+    for (let floor = 1; floor < MAP_PATH_FLOORS; floor++) {
+        const current = idsByFloor[floor] ?? [];
+        const next = idsByFloor[floor + 1] ?? [];
+        for (let index = 0; index < current.length; index++) {
+            const nodeId = current[index];
+            const primary = next[index];
+            const branch = next[(index + (floor % 2 === 0 ? 1 : -1) + next.length) % next.length];
+            if (primary !== undefined) {
+                connect(nodeId, primary);
+            }
+            if (branch !== undefined) {
+                connect(nodeId, branch);
+            }
+        }
+    }
+    for (const id of idsByFloor[MAP_PATH_FLOORS] ?? []) {
+        connect(id, bossId);
     }
     return graph;
 }
