@@ -144,7 +144,7 @@ export class BattlePlaceholderManager extends Component {
     private _activeShadow: ShadowId | null = null;
     private _playerStrength = 0;
     private _nextTurnEnergyCapBonus = 0;
-    private _firstDescentCoverUsedThisTurn = false;
+    private _firstDescentCoverUsedThisCombat = false;
     private _hasTacticalTerrain = false;
     private _playerVulnerableTurns = 0;
     private _playerFrailTurns = 0;
@@ -235,7 +235,7 @@ export class BattlePlaceholderManager extends Component {
         this._activeShadow = null;
         this._playerStrength = 0;
         this._nextTurnEnergyCapBonus = 0;
-        this._firstDescentCoverUsedThisTurn = false;
+        this._firstDescentCoverUsedThisCombat = false;
         this._hasTacticalTerrain = false;
         this._playerVulnerableTurns = 0;
         this._playerFrailTurns = 0;
@@ -747,7 +747,6 @@ export class BattlePlaceholderManager extends Component {
         this._state = 'player';
         this._turn += 1;
         this._playerBlock = 0;
-        this._firstDescentCoverUsedThisTurn = false;
         this._flow.resetTemporaryCosts();
         this._energy.perTurn = 3 + this._nextTurnEnergyCapBonus;
         if (this._nextTurnEnergyCapBonus > 0) {
@@ -1157,8 +1156,8 @@ export class BattlePlaceholderManager extends Component {
             this.leaveShadow(true, '降临覆盖');
         }
         this._activeShadow = next;
-        if (!this._firstDescentCoverUsedThisTurn) {
-            this._firstDescentCoverUsedThisTurn = true;
+        if (!this._firstDescentCoverUsedThisCombat) {
+            this._firstDescentCoverUsedThisCombat = true;
             const energy = this.firstDescentCoverEnergyBonus();
             const draw = this.firstDescentCoverDrawBonus();
             if (energy > 0 || draw > 0) {
