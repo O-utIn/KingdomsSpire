@@ -4,13 +4,10 @@ import {
     Canvas,
     Color,
     Component,
-    director,
     Graphics,
     Label,
     Node,
-    resources,
     Sprite,
-    SpriteFrame,
     UITransform,
     view,
     Widget,
@@ -33,6 +30,7 @@ import type { EnemyId, EnemyStatusCardAddition } from './enemies/EnemyDef';
 import { getEnemyDef } from './enemies/EnemyDef';
 import { createEnemyInstance, EnemyInstance } from './enemies/EnemyInstance';
 import { loadGameMapScene } from './SceneLoader';
+import { loadSceneFast, loadSpriteFrame, loadSpriteFrames, warmScene } from './AssetLoader';
 
 const { ccclass } = _decorator;
 
@@ -88,20 +86,6 @@ const REWARD_GOLD: Record<Exclude<CombatEncounterKind, ''>, number> = {
     elite: 35,
     boss: 90,
 };
-
-function loadSpriteFrame(resourcesPath: string): Promise<SpriteFrame | null> {
-    const path = resourcesPath.endsWith('/spriteFrame') ? resourcesPath : `${resourcesPath}/spriteFrame`;
-    return new Promise((resolve) => {
-        resources.load(path, SpriteFrame, (err, sf) => {
-            if (err) {
-                console.warn(`[BattlePlaceholderManager] 加载图片失败：${path}`, err);
-                resolve(null);
-            } else {
-                resolve(sf);
-            }
-        });
-    });
-}
 
 function paintRoundRect(g: Graphics, w: number, h: number, fill: Color, stroke?: Color, lineWidth = 2): void {
     g.clear();
@@ -175,7 +159,7 @@ export class BattlePlaceholderManager extends Component {
     async start(): Promise<void> {
         this.syncCanvasCameraToScreen();
         if (this.shouldReturnToMainMenuFromInvalidLaunch()) {
-            director.loadScene(SCENE_MAIN_MENU);
+            loadSceneFast(SCENE_MAIN_MENU);
             return;
         }
         this.setupCombatData();
@@ -183,6 +167,7 @@ export class BattlePlaceholderManager extends Component {
         RunHudManager.startRun();
         await this.buildSceneGraph();
         this.startPlayerTurn(true);
+        this.scheduleOnce(() => warmScene('GameMap'), 0.1);
     }
 
     private shouldReturnToMainMenuFromInvalidLaunch(): boolean {
@@ -295,6 +280,13 @@ export class BattlePlaceholderManager extends Component {
     }
 
     private async buildSceneGraph(): Promise<void> {
+        const playerArt = PLAYER_ART_BY_CHAR[GlobalData.instance.selectedCharId] ?? PLAYER_ART_BY_CHAR[0];
+        await loadSpriteFrames([
+            BATTLE_BG,
+            playerArt,
+            ...this.relicDefs().map((relic) => relic.iconPath),
+        ]);
+
         for (const child of [...this.node.children]) {
             if (child.name !== 'Camera') {
                 child.destroy();
@@ -1426,7 +1418,7 @@ export class BattlePlaceholderManager extends Component {
             GlobalData.instance.clearPendingEncounter();
             RunHudManager.stopRun();
             GlobalAudioManager.stopBgm();
-            director.loadScene(SCENE_MAIN_MENU, (err) => {
+            loadSceneFast(SCENE_MAIN_MENU, (err) => {
                 if (err) {
                     console.error('[BattlePlaceholderManager] 返回主菜单失败', err);
                 }

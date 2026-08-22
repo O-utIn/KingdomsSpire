@@ -6,9 +6,7 @@ import {
     Label,
     Layout,
     Node,
-    resources,
     Sprite,
-    SpriteFrame,
     UITransform,
     Vec2,
     view,
@@ -20,6 +18,7 @@ import { GlobalAudioManager } from './GlobalAudioManager';
 import { RunHudManager } from './RunHudManager';
 import { getStarterDeckForCharacter } from './cards/StarterDeck';
 import { loadGameMapScene } from './SceneLoader';
+import { loadSpriteFrame, warmScene, warmSpriteFrames } from './AssetLoader';
 const { ccclass, property } = _decorator;
 
 type CharRow = Pick<CharacterPackage, 'id' | 'name' | 'hp' | 'maxHp' | 'gold' | 'desc'>;
@@ -54,6 +53,21 @@ export class InitialRewardManager extends Component {
         this.prepareRunState();
         // 晚一帧再写 UI，避免与 Layout 同一帧抢顺序；运行后才会执行（编辑器静态场景里不会跑）
         this.scheduleOnce(() => this.setupRewardRows(), 0);
+        this.scheduleOnce(() => {
+            warmScene('GameMap');
+            warmSpriteFrames([
+                'textures/spire-codex-ui-map-backgrounds/map_middle_overgrowth',
+                'textures/spire-codex-ui-map-nodes/map_node_background',
+                'textures/spire-codex-ui-map-nodes/map_unknown',
+                'textures/spire-codex-ui-map-nodes/map_chest',
+                'textures/spire-codex-ui-map-nodes/map_monster',
+                'textures/spire-codex-ui-map-nodes/map_elite',
+                'textures/spire-codex-ui-map-nodes/map_rest',
+                'textures/spire-codex-ui-map-nodes/map_shop',
+                'textures/spire-codex-ui-map-nodes/map_chest_boss',
+                'textures/spire-codex-ui-map-nodes/map_ping',
+            ]);
+        }, 0.2);
     }
 
     private applyThemeBackground(): void {
@@ -70,8 +84,8 @@ export class InitialRewardManager extends Component {
         const sprite = bg.getComponent(Sprite) ?? bg.addComponent(Sprite);
         sprite.sizeMode = Sprite.SizeMode.CUSTOM;
         sprite.color = Color.WHITE;
-        resources.load('textures/background/bg1/spriteFrame', SpriteFrame, (err, sf) => {
-            if (!err && sf && bg.isValid) {
+        void loadSpriteFrame('textures/background/bg1').then((sf) => {
+            if (sf && bg.isValid) {
                 sprite.spriteFrame = sf;
             }
         });
@@ -216,15 +230,11 @@ export class InitialRewardManager extends Component {
         n.setSiblingIndex(parent.children.length - 1);
 
         const sp = n.getComponent(Sprite);
-        resources.load(`${relic.iconPath}/spriteFrame`, SpriteFrame, (err, sf) => {
-            if (err || !sp || !sp.node.isValid) {
-                if (err) {
-                    console.warn(`[InitialRewardManager] 加载遗物图标失败：${relic.iconPath}`, err);
-                }
-                return;
+        void loadSpriteFrame(relic.iconPath).then((sf) => {
+            if (sf && sp?.node.isValid) {
+                sp.spriteFrame = sf;
+                sp.color = Color.WHITE;
             }
-            sp.spriteFrame = sf;
-            sp.color = Color.WHITE;
         });
     }
 

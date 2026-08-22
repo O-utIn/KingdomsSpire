@@ -5,16 +5,13 @@ import {
     Canvas,
     Color,
     Component,
-    director,
     EventMouse,
     EventTouch,
     Graphics,
     Label,
     Layers,
     Node,
-    resources,
     Sprite,
-    SpriteFrame,
     UITransform,
     Vec2,
     Widget,
@@ -29,6 +26,7 @@ import { getCardDef } from './cards/CardDef';
 import { getStarterDeckForCharacter } from './cards/StarterDeck';
 import type { RelicId } from './relics/RelicDef';
 import { getRelicDef } from './relics/RelicDef';
+import { loadSceneFast, loadSpriteFrame, loadSpriteFrames, warmScene, warmSpriteFrames } from './AssetLoader';
 
 const { ccclass } = _decorator;
 
@@ -53,6 +51,16 @@ const ICON: Record<MapNodeKind, string> = {
     shop: 'textures/spire-codex-ui-map-nodes/map_shop',
     event: 'textures/spire-codex-ui-map-nodes/map_unknown',
     boss: 'textures/spire-codex-ui-map-nodes/map_chest_boss',
+};
+
+const FALLBACK_ICON_TEXT: Record<MapNodeKind, string> = {
+    start: '起',
+    monster: '敌',
+    elite: '精',
+    rest: '休',
+    shop: '商',
+    event: '?',
+    boss: '王',
 };
 
 const PING = 'textures/spire-codex-ui-map-nodes/map_ping';
@@ -536,22 +544,6 @@ const LEGEND_ROWS: { path: string; text: string }[] = [
     { path: ICON.elite, text: '精英' },
 ];
 
-function loadSpriteFrame(resourcesPath: string): Promise<SpriteFrame | null> {
-    const path = resourcesPath.endsWith('/spriteFrame')
-        ? resourcesPath
-        : `${resourcesPath}/spriteFrame`;
-    return new Promise((resolve) => {
-        resources.load(path, SpriteFrame, (err, sf) => {
-            if (err) {
-                console.error(`[MapScreenManager] 加载失败 ${path}`, err);
-                resolve(null);
-            } else {
-                resolve(sf);
-            }
-        });
-    });
-}
-
 function graphPos(id: number): Vec2 {
     const n = MAP_GRAPH[id];
     return n ? new Vec2(n.x, n.y) : new Vec2();
@@ -677,6 +669,16 @@ export class MapScreenManager extends Component {
         this.redrawEdgeLines();
         this.redrawPathLine();
         this.refreshPingAndInteract();
+        this.scheduleOnce(() => {
+            warmScene(SCENE_BATTLE);
+            warmScene(SCENE_EVENT);
+            const playerArt = [
+                'textures/chars/character_battle',
+                'textures/chars/moj_battle',
+                'textures/chars/small_battle',
+            ][GlobalData.instance.selectedCharId] ?? 'textures/chars/character_battle';
+            warmSpriteFrames(['textures/background/bg_battle', playerArt]);
+        }, 0.1);
     }
 
     private ensureStarterDeck(): void {
@@ -873,7 +875,16 @@ export class MapScreenManager extends Component {
 
         this.bindMapZoomInput(root);
 
-        const backgroundSf = await loadSpriteFrame(MAP_BACKGROUND);
+        const markerPath = MARKER_BY_CHAR[GlobalData.instance.selectedCharId] ?? MARKER_BY_CHAR[0];
+        const frames = await loadSpriteFrames([
+            MAP_BACKGROUND,
+            PLATE,
+            AURA_TEX,
+            markerPath,
+            PING,
+            ...Object.values(ICON),
+        ]);
+        const backgroundSf = frames.get(MAP_BACKGROUND) ?? null;
         if (backgroundSf) {
             const n = new Node('MapBackground');
             root.addChild(n);
@@ -884,23 +895,37 @@ export class MapScreenManager extends Component {
             const sp = n.addComponent(Sprite);
             sp.spriteFrame = backgroundSf;
             sp.sizeMode = Sprite.SizeMode.CUSTOM;
+        } else {
+            // Keep the map playable even if one remote texture fails to download.
+            const n = new Node('MapBackgroundFallback');
+            root.addChild(n);
+            n.setSiblingIndex(0);
+            const ut = n.addComponent(UITransform);
+            ut.setContentSize(vs.width + 8, innerH + 4);
+            ut.anchorPoint.set(0.5, 0.5);
+            const g = n.addComponent(Graphics);
+            g.fillColor = new Color(18, 30, 31, 255);
+            g.rect(-(vs.width + 8) * 0.5, -(innerH + 4) * 0.5, vs.width + 8, innerH + 4);
+            g.fill();
+            g.fillColor = new Color(35, 56, 48, 180);
+            g.rect(-(vs.width + 8) * 0.5, -(innerH + 4) * 0.5, (vs.width + 8) * 0.32, innerH + 4);
+            g.fill();
         }
 
         this._lineGraphics = this.addLineLayer(zoomRoot, vs.width, innerH);
         this._pathGraphics = this.addPathLayer(zoomRoot, vs.width, innerH);
 
-        const plateSf = await loadSpriteFrame(PLATE);
-        const auraSf = await loadSpriteFrame(AURA_TEX);
-        const markerPath = MARKER_BY_CHAR[GlobalData.instance.selectedCharId] ?? MARKER_BY_CHAR[0];
-        const markerSf = await loadSpriteFrame(markerPath);
-        const pingSf = await loadSpriteFrame(PING);
+        const plateSf = frames.get(PLATE) ?? null;
+        const auraSf = frames.get(AURA_TEX) ?? null;
+        const markerSf = frames.get(markerPath) ?? null;
+        const pingSf = frames.get(PING) ?? null;
 
         this._wrapById = [];
         this._glowById = [];
         this._ringGfxById = [];
 
         for (const def of MAP_GRAPH) {
-            const iconSf = await loadSpriteFrame(ICON[def.kind]);
+            const iconSf = frames.get(ICON[def.kind]) ?? null;
             const wrap = new Node(`Node_${def.id}`);
             zoomRoot.addChild(wrap);
             wrap.setPosition(def.x, def.y, 0);
@@ -942,6 +967,18 @@ export class MapScreenManager extends Component {
                 const pSp = plate.addComponent(Sprite);
                 pSp.spriteFrame = plateSf;
                 pSp.sizeMode = Sprite.SizeMode.CUSTOM;
+            } else {
+                const plate = new Node('PlateFallback');
+                wrap.addChild(plate);
+                plate.addComponent(UITransform).setContentSize(92, 92);
+                const pGfx = plate.addComponent(Graphics);
+                pGfx.fillColor = new Color(35, 43, 52, 245);
+                pGfx.circle(0, 0, 43);
+                pGfx.fill();
+                pGfx.lineWidth = 3;
+                pGfx.strokeColor = new Color(184, 148, 82, 245);
+                pGfx.circle(0, 0, 43);
+                pGfx.stroke();
             }
             if (iconSf) {
                 const ic = new Node('Icon');
@@ -951,6 +988,17 @@ export class MapScreenManager extends Component {
                 const iSp = ic.addComponent(Sprite);
                 iSp.spriteFrame = iconSf;
                 iSp.sizeMode = Sprite.SizeMode.CUSTOM;
+            } else {
+                const ic = new Node('IconFallback');
+                wrap.addChild(ic);
+                ic.addComponent(UITransform).setContentSize(58, 58);
+                const label = ic.addComponent(Label);
+                label.string = FALLBACK_ICON_TEXT[def.kind];
+                label.fontSize = 30;
+                label.lineHeight = 34;
+                label.horizontalAlign = Label.HorizontalAlign.CENTER;
+                label.verticalAlign = Label.VerticalAlign.CENTER;
+                label.color = new Color(238, 224, 189, 255);
             }
 
             const ringN = new Node('SelectRing');
@@ -1139,7 +1187,7 @@ export class MapScreenManager extends Component {
         const combatKinds: MapNodeKind[] = ['monster', 'elite', 'boss'];
         if (next && combatKinds.includes(next.kind)) {
             GlobalData.instance.prepareEncounter(next.kind as 'monster' | 'elite' | 'boss', nodeId);
-            director.loadScene(SCENE_BATTLE, (err) => {
+            loadSceneFast(SCENE_BATTLE, (err) => {
                 if (err) {
                     console.error('[MapScreenManager] 进入战斗场景失败（请确认构建已包含 Battle）', err);
                 }
@@ -1149,7 +1197,7 @@ export class MapScreenManager extends Component {
 
         if (next?.kind === 'event') {
             // 进入事件房间（兴趣点）
-            director.loadScene(SCENE_EVENT, (err) => {
+            loadSceneFast(SCENE_EVENT, (err) => {
                 if (err) {
                     console.error('[MapScreenManager] 进入事件场景失败（请确认构建已包含 Event）', err);
                 }

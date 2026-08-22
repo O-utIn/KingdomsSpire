@@ -10,15 +10,14 @@ import {
     Label,
     Layers,
     Node,
-    resources,
     Sprite,
-    SpriteFrame,
     UITransform,
     view,
 } from 'cc';
 import { GlobalData } from './GlobalData';
 import { getCardDef, type CardDef, type CardId } from './cards/CardDef';
 import { getStarterDeckForCharacter } from './cards/StarterDeck';
+import { loadSpriteFrame } from './AssetLoader';
 
 const { ccclass } = _decorator;
 
@@ -42,20 +41,6 @@ function applyLayerDeep(node: Node, layer: number): void {
     for (const child of node.children) {
         applyLayerDeep(child, layer);
     }
-}
-
-function loadSpriteFrame(resourcesPath: string): Promise<SpriteFrame | null> {
-    const path = resourcesPath.endsWith('/spriteFrame') ? resourcesPath : `${resourcesPath}/spriteFrame`;
-    return new Promise((resolve) => {
-        resources.load(path, SpriteFrame, (err, sf) => {
-            if (err) {
-                console.warn(`[DeckPreviewManager] 加载卡图失败：${path}`, err);
-                resolve(null);
-            } else {
-                resolve(sf);
-            }
-        });
-    });
 }
 
 @ccclass('DeckPreviewManager')

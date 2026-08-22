@@ -4,7 +4,6 @@ import {
     Button,
     Color,
     Component,
-    director,
     EventTouch,
     game,
     Graphics,
@@ -16,6 +15,7 @@ import {
 import { GlobalAudioManager } from './GlobalAudioManager';
 import { GlobalData } from './GlobalData';
 import { RunHudManager } from './RunHudManager';
+import { loadSceneFast, warmScene, warmSpriteFrames } from './AssetLoader';
 
 const { ccclass } = _decorator;
 
@@ -31,6 +31,11 @@ export class MainMenuManager extends Component {
         GlobalAudioManager.playBgm();
         this.node.getChildByName('Btn_Settings')?.on(Button.EventType.CLICK, this.onSettingsClick, this);
         this.createHistoryButton();
+        // Let the menu render first, then prepare the next page while the player is reading it.
+        this.scheduleOnce(() => {
+            warmScene('CharSelect');
+            warmSpriteFrames(['textures/chars/character_background']);
+        }, 0.2);
     }
 
     onDestroy(): void {
@@ -48,7 +53,7 @@ export class MainMenuManager extends Component {
 
     public onSinglePlayerClick(): void {
         GlobalData.instance.resetMapProgress();
-        director.loadScene('CharSelect', (err) => {
+        loadSceneFast('CharSelect', (err) => {
             if (err) {
                 console.error('跳转选角页面失败', err);
             }

@@ -1,5 +1,7 @@
-import { _decorator, Color, Component, Label, Node, Sprite, director, resources, SpriteFrame, Toggle, tween, UIOpacity, UITransform, game } from 'cc';
+import { _decorator, Color, Component, Label, Node, Sprite, Toggle, tween, UIOpacity, UITransform } from 'cc';
 import { GlobalData } from './GlobalData';
+import { loadSceneFast, loadSpriteFrame, warmScene, warmSpriteFrames } from './AssetLoader';
+import { getRelicDef, NEOW_STARTER_RELIC_IDS } from './relics/RelicDef';
 const { ccclass, property } = _decorator;
 
 /*
@@ -63,6 +65,15 @@ export class CharSelectManager extends Component {
         GlobalData.instance.difficulty = this.difficultyLevels[this.currentDiffIdx];
         this.applyDifficultyArrowLabels();
         this.updateUI(0);
+        this.scheduleOnce(() => {
+            warmScene('InitialReward');
+            warmSpriteFrames([
+                'textures/background/bg1',
+                ...NEOW_STARTER_RELIC_IDS
+                    .map((id) => getRelicDef(id)?.iconPath)
+                    .filter((path): path is string => !!path),
+            ]);
+        }, 0.2);
     }
 
     private applyDifficultyArrowLabels(): void {
@@ -144,12 +155,10 @@ export class CharSelectManager extends Component {
     }
 
     private loadResourceArt(path: string) {
-        resources.load(path + '/spriteFrame', SpriteFrame, (err, sf) => {
-            if (err) {
-                console.error("[加载失败] 请检查资源:", path, err);
-                return;
+        void loadSpriteFrame(path).then((sf) => {
+            if (sf && this.bigArtSprite?.node.isValid) {
+                this.bigArtSprite.spriteFrame = sf;
             }
-            this.bigArtSprite.spriteFrame = sf;
         });
     }
 
@@ -178,11 +187,11 @@ export class CharSelectManager extends Component {
     }
 
     onBackClick() {
-        director.loadScene("MainMenu");
+        loadSceneFast('MainMenu');
     }
 
     onConfirmClick() {
         console.log(`[确认选择] 角色ID: ${GlobalData.instance.selectedCharId}, 难度: ${GlobalData.instance.difficulty}`);
-        director.loadScene("InitialReward"); 
+        loadSceneFast('InitialReward');
     }
 }

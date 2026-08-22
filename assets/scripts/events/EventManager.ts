@@ -1,14 +1,11 @@
 import {
     _decorator,
     Component,
-    director,
     Label,
     Node,
     Sprite,
-    SpriteFrame,
     Button,
     BlockInputEvents,
-    resources,
     UITransform,
     Color,
     Graphics,
@@ -27,6 +24,7 @@ import { getRelicDef } from '../relics/RelicDef';
 import { loadGameMapScene } from '../SceneLoader';
 import { EventDef, EventChoice, EventResult } from './EventDef';
 import { EVENT_POOL } from './EventPool';
+import { loadSceneFast, loadSpriteFrame, warmScene } from '../AssetLoader';
 
 const { ccclass } = _decorator;
 
@@ -47,6 +45,7 @@ export class EventManager extends Component {
         RunHudManager.startRun();
         RunHudManager.setCenterText('事件  |  选择');
         this.buildUI();
+        this.scheduleOnce(() => warmScene('GameMap'), 0.1);
     }
 
     start(): void {
@@ -186,9 +185,8 @@ export class EventManager extends Component {
 
     /** 加载事件图片 */
     private loadEventImage(path: string): void {
-        const fullPath = path.endsWith('/spriteFrame') ? path : `${path}/spriteFrame`;
-        resources.load(fullPath, SpriteFrame, (err, sf) => {
-            if (!err && this._imageSprite) {
+        void loadSpriteFrame(path).then((sf) => {
+            if (sf && this._imageSprite?.node.isValid) {
                 this._imageSprite.spriteFrame = sf;
                 this._imageSprite.color = new Color(255, 255, 255, 255);
             }
@@ -283,7 +281,7 @@ export class EventManager extends Component {
         this.showResultFeedback(result, () => {
             if (result.type === 'combat') {
                 GlobalData.instance.prepareEncounter('monster', -1);
-                director.loadScene(SCENE_BATTLE);
+                loadSceneFast(SCENE_BATTLE);
                 return;
             }
             this.returnToMap();

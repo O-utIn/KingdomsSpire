@@ -1,6 +1,7 @@
 import { director } from 'cc';
 import { SCENE_GAME_MAP } from './GameConfig';
 import { MapScreenManager } from './MapScreenManager';
+import { loadSceneFast } from './AssetLoader';
 
 export function ensureGameMapManager(): void {
     const scene = director.getScene();
@@ -11,7 +12,7 @@ export function ensureGameMapManager(): void {
 }
 
 export function loadGameMapScene(onError?: (err: unknown) => void): void {
-    director.loadScene(SCENE_GAME_MAP, (err) => {
+    loadSceneFast(SCENE_GAME_MAP, (err) => {
         if (err) {
             onError?.(err);
             return;

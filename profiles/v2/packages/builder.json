@@ -8,6 +8,12 @@
     },
     "polyfills": {
       "asyncFunctions": true
+    },
+    "md5Cache": true,
+    "overwriteProjectSettings": {
+      "macroConfig": {
+        "cleanupImageCache": "on"
+      }
     }
   },
   "BuildTaskManager": {
@@ -29,7 +35,7 @@
           "debug": false,
           "buildMode": "normal",
           "mangleProperties": false,
-          "md5Cache": false,
+          "md5Cache": true,
           "skipCompressTexture": false,
           "sourceMaps": false,
           "overwriteProjectSettings": {
@@ -39,7 +45,7 @@
               "physics-2d": "inherit-project-setting"
             },
             "macroConfig": {
-              "cleanupImageCache": "inherit-project-setting"
+              "cleanupImageCache": "on"
             }
           },
           "nativeCodeBundleMode": "both",
@@ -124,7 +130,7 @@
           "debug": false,
           "buildMode": "normal",
           "mangleProperties": false,
-          "md5Cache": false,
+          "md5Cache": true,
           "skipCompressTexture": false,
           "sourceMaps": false,
           "overwriteProjectSettings": {
@@ -134,7 +140,7 @@
               "physics-2d": "inherit-project-setting"
             },
             "macroConfig": {
-              "cleanupImageCache": "inherit-project-setting"
+              "cleanupImageCache": "on"
             }
           },
           "nativeCodeBundleMode": "both",
