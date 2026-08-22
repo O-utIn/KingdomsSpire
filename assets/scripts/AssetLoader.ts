@@ -7,6 +7,7 @@ import { director, resources, SpriteFrame } from 'cc';
  */
 const spriteFrameLoads = new Map<string, Promise<SpriteFrame | null>>();
 const scenePreloads = new Map<string, Promise<void>>();
+const sceneAssetPreloads = new Map<string, Promise<void>>();
 const SPRITE_FRAME_TIMEOUT_MS = 12_000;
 
 export function spriteFramePath(resourcesPath: string): string {
@@ -84,8 +85,41 @@ export async function loadSpriteFrames(resourcesPaths: readonly string[]): Promi
  * Start downloading/decoding the next page's dynamic images without blocking the
  * current page. Errors are logged by `loadSpriteFrame` and can be retried later.
  */
-export function warmSpriteFrames(resourcesPaths: readonly string[]): void {
-    void loadSpriteFrames(resourcesPaths);
+export function warmSpriteFrames(resourcesPaths: readonly string[]): Promise<Map<string, SpriteFrame | null>> {
+    return loadSpriteFrames(resourcesPaths);
+}
+
+/**
+ * Decode large optional images in small batches, yielding between batches so an
+ * idle page does not receive one long main-thread texture upload spike.
+ */
+export async function warmSpriteFramesInBatches(
+    resourcesPaths: readonly string[],
+    batchSize = 1,
+    gapMs = 48,
+    shouldContinue: () => boolean = () => true,
+): Promise<void> {
+    const uniquePaths: string[] = [];
+    const seen = new Set<string>();
+    resourcesPaths.forEach((path) => {
+        if (typeof path === 'string' && path.length > 0 && !seen.has(path)) {
+            seen.add(path);
+            uniquePaths.push(path);
+        }
+    });
+    const size = Math.max(1, Math.floor(batchSize));
+    for (let index = 0; index < uniquePaths.length; index += size) {
+        if (!shouldContinue()) {
+            return;
+        }
+        await loadSpriteFrames(uniquePaths.slice(index, index + size));
+        if (!shouldContinue()) {
+            return;
+        }
+        if (index + size < uniquePaths.length && gapMs > 0) {
+            await new Promise<void>((resolve) => setTimeout(resolve, gapMs));
+        }
+    }
 }
 
 /**
@@ -110,12 +144,28 @@ export function preloadScene(sceneName: string): Promise<void> {
     return pending;
 }
 
-export function warmScene(sceneName: string): void {
+export function warmScene(sceneName: string): Promise<void> {
+    return preloadScene(sceneName);
+}
+
+/**
+ * Associate dynamic images with the scene that will consume them. Besides starting
+ * both requests immediately, `loadSceneFast` can then wait for an in-flight image
+ * decode before replacing the current page. This avoids entering a half-rendered
+ * scene when the player clicks faster than the background warm-up.
+ */
+export function warmSceneAssets(sceneName: string, resourcesPaths: readonly string[]): Promise<void> {
+    const previous = sceneAssetPreloads.get(sceneName) ?? Promise.resolve();
+    const nextBatch = loadSpriteFrames(resourcesPaths).then(() => undefined);
+    const pending = Promise.all([previous, nextBatch]).then(() => undefined);
+    sceneAssetPreloads.set(sceneName, pending);
     void preloadScene(sceneName);
+    return pending;
 }
 
 export function loadSceneFast(sceneName: string, onLoaded?: (err: Error | null) => void): void {
-    void preloadScene(sceneName).then(() => {
+    const assetsReady = sceneAssetPreloads.get(sceneName) ?? Promise.resolve();
+    void Promise.all([preloadScene(sceneName), assetsReady]).then(() => {
         director.loadScene(sceneName, (err) => onLoaded?.(err));
     });
 }

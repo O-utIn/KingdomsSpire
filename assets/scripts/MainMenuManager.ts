@@ -15,9 +15,24 @@ import {
 import { GlobalAudioManager } from './GlobalAudioManager';
 import { GlobalData } from './GlobalData';
 import { RunHudManager } from './RunHudManager';
-import { loadSceneFast, warmScene, warmSpriteFrames } from './AssetLoader';
+import { loadSceneFast, warmSceneAssets, warmSpriteFramesInBatches } from './AssetLoader';
 
 const { ccclass } = _decorator;
+
+const CHAR_SELECT_CRITICAL_ASSETS = [
+    'textures/chars/character_select',
+    'textures/chars/character_locked',
+    'textures/chars/moj_locked',
+    'textures/chars/small_locked',
+    'textures/chars/moj',
+    'textures/chars/small',
+    'textures/chars/character_background',
+] as const;
+
+const CHAR_SELECT_OPTIONAL_ART = [
+    'textures/chars/moj_background',
+    'textures/chars/samll_background',
+] as const;
 
 @ccclass('MainMenuManager')
 export class MainMenuManager extends Component {
@@ -31,11 +46,12 @@ export class MainMenuManager extends Component {
         GlobalAudioManager.playBgm();
         this.node.getChildByName('Btn_Settings')?.on(Button.EventType.CLICK, this.onSettingsClick, this);
         this.createHistoryButton();
-        // Let the menu render first, then prepare the next page while the player is reading it.
+        // Let the menu render first, then download and decode every image the
+        // character page may show (including the two images reached by switching).
         this.scheduleOnce(() => {
-            warmScene('CharSelect');
-            warmSpriteFrames(['textures/chars/character_background']);
-        }, 0.2);
+            void warmSceneAssets('CharSelect', CHAR_SELECT_CRITICAL_ASSETS);
+            void warmSpriteFramesInBatches(CHAR_SELECT_OPTIONAL_ART, 1, 64);
+        }, 0.05);
     }
 
     onDestroy(): void {

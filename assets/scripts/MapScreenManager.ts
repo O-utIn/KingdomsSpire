@@ -26,7 +26,16 @@ import { getCardDef } from './cards/CardDef';
 import { getStarterDeckForCharacter } from './cards/StarterDeck';
 import type { RelicId } from './relics/RelicDef';
 import { getRelicDef } from './relics/RelicDef';
-import { loadSceneFast, loadSpriteFrame, loadSpriteFrames, warmScene, warmSpriteFrames } from './AssetLoader';
+import { getEncounterArtPaths } from './enemies/EnemyDef';
+import { getEventById, selectWeightedRandomEvent } from './events/EventPool';
+import {
+    loadSceneFast,
+    loadSpriteFrame,
+    loadSpriteFrames,
+    warmScene,
+    warmSceneAssets,
+    warmSpriteFramesInBatches,
+} from './AssetLoader';
 
 const { ccclass } = _decorator;
 
@@ -669,16 +678,7 @@ export class MapScreenManager extends Component {
         this.redrawEdgeLines();
         this.redrawPathLine();
         this.refreshPingAndInteract();
-        this.scheduleOnce(() => {
-            warmScene(SCENE_BATTLE);
-            warmScene(SCENE_EVENT);
-            const playerArt = [
-                'textures/chars/character_battle',
-                'textures/chars/moj_battle',
-                'textures/chars/small_battle',
-            ][GlobalData.instance.selectedCharId] ?? 'textures/chars/character_battle';
-            warmSpriteFrames(['textures/background/bg_battle', playerArt]);
-        }, 0.1);
+        this.scheduleOnce(() => this.warmNextMapDestinations(), 0.05);
     }
 
     private ensureStarterDeck(): void {
@@ -689,6 +689,107 @@ export class MapScreenManager extends Component {
         }
         gd.deckIds = getStarterDeckForCharacter(gd.selectedCharId);
         gd.deckCount = gd.deckIds.length;
+    }
+
+    /**
+     * Prepare only destinations reachable from the current node. Large enemy art
+     * is decoded one image at a time after the map has rendered.
+     */
+    private warmNextMapDestinations(): void {
+        const gd = GlobalData.instance;
+        const current = MAP_GRAPH[gd.mapCurrentNodeId];
+        if (!current) {
+            return;
+        }
+
+        const playerArt = [
+            'textures/chars/character_battle',
+            'textures/chars/moj_battle',
+            'textures/chars/small_battle',
+        ][gd.selectedCharId] ?? 'textures/chars/character_battle';
+        const battleAssets: string[] = [
+            'textures/background/bg_battle',
+            playerArt,
+        ];
+        gd.selectedChar?.relics.forEach((id) => {
+            const path = getRelicDef(id)?.iconPath;
+            if (path) {
+                battleAssets.push(path);
+            }
+        });
+        gd.deckIds.forEach((id) => {
+            const path = getCardDef(id)?.artPath;
+            if (path) {
+                battleAssets.push(path);
+            }
+        });
+        const potionArt: Record<string, string> = {
+            fire_potion: 'textures/potions/fire_potion',
+            swift_potion: 'textures/potions/swift_potion',
+            blood_potion: 'textures/potions/blood_potion',
+        };
+        gd.potionIds.forEach((id) => {
+            const path = potionArt[id];
+            if (path) {
+                battleAssets.push(path);
+            }
+        });
+
+        let hasBattleDestination = false;
+        let hasEventDestination = false;
+        current.children.forEach((childId) => {
+            const child = MAP_GRAPH[childId];
+            if (!child) {
+                return;
+            }
+            if (child.kind === 'monster' || child.kind === 'elite' || child.kind === 'boss') {
+                hasBattleDestination = true;
+                battleAssets.push(...getEncounterArtPaths(child.kind, child.id, gd.selectedCharId));
+            } else if (child.kind === 'event') {
+                hasEventDestination = true;
+            }
+        });
+
+        if (hasBattleDestination) {
+            void warmScene(SCENE_BATTLE);
+            void warmSpriteFramesInBatches(battleAssets, 1, 56, () => this.node.isValid);
+        }
+        if (hasEventDestination) {
+            let event = getEventById(gd.pendingEventId);
+            if (!event) {
+                event = selectWeightedRandomEvent();
+                gd.pendingEventId = event.id;
+            }
+            void warmSceneAssets(SCENE_EVENT, event.image ? [event.image] : []);
+        }
+    }
+
+    /** Critical assets for one clicked combat node; optional branches never block it. */
+    private getCombatDestinationAssets(node: GraphNode): string[] {
+        const gd = GlobalData.instance;
+        const playerArt = [
+            'textures/chars/character_battle',
+            'textures/chars/moj_battle',
+            'textures/chars/small_battle',
+        ][gd.selectedCharId] ?? 'textures/chars/character_battle';
+        const assets = [
+            'textures/background/bg_battle',
+            playerArt,
+            ...getEncounterArtPaths(node.kind as 'monster' | 'elite' | 'boss', node.id, gd.selectedCharId),
+        ];
+        gd.selectedChar?.relics.forEach((id) => {
+            const path = getRelicDef(id)?.iconPath;
+            if (path) {
+                assets.push(path);
+            }
+        });
+        gd.deckIds.forEach((id) => {
+            const path = getCardDef(id)?.artPath;
+            if (path) {
+                assets.push(path);
+            }
+        });
+        return assets;
     }
 
     onDestroy(): void {
@@ -1187,6 +1288,7 @@ export class MapScreenManager extends Component {
         const combatKinds: MapNodeKind[] = ['monster', 'elite', 'boss'];
         if (next && combatKinds.includes(next.kind)) {
             GlobalData.instance.prepareEncounter(next.kind as 'monster' | 'elite' | 'boss', nodeId);
+            void warmSceneAssets(SCENE_BATTLE, this.getCombatDestinationAssets(next));
             loadSceneFast(SCENE_BATTLE, (err) => {
                 if (err) {
                     console.error('[MapScreenManager] 进入战斗场景失败（请确认构建已包含 Battle）', err);
@@ -1197,6 +1299,8 @@ export class MapScreenManager extends Component {
 
         if (next?.kind === 'event') {
             // 进入事件房间（兴趣点）
+            const event = getEventById(GlobalData.instance.pendingEventId);
+            void warmSceneAssets(SCENE_EVENT, event?.image ? [event.image] : []);
             loadSceneFast(SCENE_EVENT, (err) => {
                 if (err) {
                     console.error('[MapScreenManager] 进入事件场景失败（请确认构建已包含 Event）', err);
@@ -1206,12 +1310,16 @@ export class MapScreenManager extends Component {
         }
 
         if (next?.kind === 'rest') {
+            this.scheduleOnce(() => this.warmNextMapDestinations(), 0);
             void this.showCampfireSpireStyle(nodeId);
             return;
         }
         if (next?.kind === 'shop') {
+            this.scheduleOnce(() => this.warmNextMapDestinations(), 0);
             void this.showShopBoardStyle(nodeId);
+            return;
         }
+        this.scheduleOnce(() => this.warmNextMapDestinations(), 0);
     }
 
     private async showCampfireSpireStyle(nodeId: number): Promise<void> {

@@ -1,4 +1,5 @@
 import type { CardId } from '../cards/CardDef';
+import type { CombatEncounterKind } from '../GlobalData';
 
 /** 怪物配置 id，与数据表主键一致 */
 export type EnemyId = string;
@@ -167,4 +168,62 @@ export function getEnemyDef(id: EnemyId): EnemyDef | undefined {
 
 export function allEnemyIds(): EnemyId[] {
     return Object.keys(DEFS);
+}
+
+/** Keep map preloading and battle creation on exactly the same encounter roll. */
+export function getEncounterEnemyIds(
+    kind: CombatEncounterKind,
+    nodeId: number,
+    selectedCharId: number,
+): EnemyId[] {
+    if (kind === 'boss') {
+        return Math.abs(nodeId + selectedCharId) % 2 === 0
+            ? ['cao_cao_warlord']
+            : ['zhouyu_grand_duke'];
+    }
+    if (kind === 'elite') {
+        return Math.abs(nodeId) % 2 === 0 ? ['xiahoudun_blind'] : ['ganning_raider'];
+    }
+    const normalPools: EnemyId[][] = [
+        ['cultist'],
+        ['jaw_worm'],
+        ['red_louse', 'red_louse'],
+        ['tiger_leopard_rider', 'red_louse'],
+    ];
+    return normalPools[Math.abs(nodeId) % normalPools.length] ?? ['cultist'];
+}
+
+/** Enemy art needed by an encounter, including enemies that its intents summon. */
+export function getEncounterArtPaths(
+    kind: CombatEncounterKind,
+    nodeId: number,
+    selectedCharId: number,
+): string[] {
+    const paths: string[] = [];
+    const seenIds = new Set<EnemyId>();
+    const seenPaths = new Set<string>();
+    const queue = getEncounterEnemyIds(kind, nodeId, selectedCharId).slice();
+    while (queue.length > 0) {
+        const id = queue.shift();
+        if (!id || seenIds.has(id)) {
+            continue;
+        }
+        seenIds.add(id);
+        const def = getEnemyDef(id);
+        if (!def) {
+            continue;
+        }
+        if (def.artPath && !seenPaths.has(def.artPath)) {
+            seenPaths.add(def.artPath);
+            paths.push(def.artPath);
+        }
+        def.intents.forEach((intent) => {
+            intent.summons?.forEach((summonedId) => {
+                if (!seenIds.has(summonedId)) {
+                    queue.push(summonedId);
+                }
+            });
+        });
+    }
+    return paths;
 }

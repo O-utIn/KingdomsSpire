@@ -3,7 +3,7 @@
  * 对应地图上的"兴趣点"（问号节点）
  */
 
-import { EventDef } from './EventDef';
+import { EventDef, EVENT_RARITY_WEIGHTS } from './EventDef';
 
 /** 示例事件池 - 可以扩展更多事件 */
 export const EVENT_POOL: EventDef[] = [
@@ -322,4 +322,18 @@ export function getEventById(id: string): EventDef | undefined {
 /** 获取特定稀有度的事件列表 */
 export function getEventsByRarity(rarity: 'common' | 'uncommon' | 'rare'): EventDef[] {
     return EVENT_POOL.filter(e => e.rarity === rarity);
+}
+
+/** Select once on the map so the chosen event image can be decoded before entry. */
+export function selectWeightedRandomEvent(random: () => number = Math.random): EventDef {
+    const getWeight = (event: EventDef): number => EVENT_RARITY_WEIGHTS[event.rarity ?? 'common'] ?? 60;
+    const totalWeight = EVENT_POOL.reduce((sum, event) => sum + getWeight(event), 0);
+    let roll = random() * totalWeight;
+    for (const event of EVENT_POOL) {
+        roll -= getWeight(event);
+        if (roll <= 0) {
+            return event;
+        }
+    }
+    return EVENT_POOL[0];
 }

@@ -18,7 +18,7 @@ import { GlobalAudioManager } from './GlobalAudioManager';
 import { RunHudManager } from './RunHudManager';
 import { getStarterDeckForCharacter } from './cards/StarterDeck';
 import { loadGameMapScene } from './SceneLoader';
-import { loadSpriteFrame, warmScene, warmSpriteFrames } from './AssetLoader';
+import { loadSpriteFrame, warmSceneAssets } from './AssetLoader';
 const { ccclass, property } = _decorator;
 
 type CharRow = Pick<CharacterPackage, 'id' | 'name' | 'hp' | 'maxHp' | 'gold' | 'desc'>;
@@ -54,8 +54,7 @@ export class InitialRewardManager extends Component {
         // 晚一帧再写 UI，避免与 Layout 同一帧抢顺序；运行后才会执行（编辑器静态场景里不会跑）
         this.scheduleOnce(() => this.setupRewardRows(), 0);
         this.scheduleOnce(() => {
-            warmScene('GameMap');
-            warmSpriteFrames([
+            void warmSceneAssets('GameMap', [
                 'textures/spire-codex-ui-map-backgrounds/map_middle_overgrowth',
                 'textures/spire-codex-ui-map-nodes/map_node_background',
                 'textures/spire-codex-ui-map-nodes/map_unknown',
@@ -66,8 +65,11 @@ export class InitialRewardManager extends Component {
                 'textures/spire-codex-ui-map-nodes/map_shop',
                 'textures/spire-codex-ui-map-nodes/map_chest_boss',
                 'textures/spire-codex-ui-map-nodes/map_ping',
+                'textures/spire-codex-ui-map-nodes/map_marker_silent',
+                'textures/spire-codex-ui-map-nodes/map_marker_defect',
+                'textures/spire-codex-ui-map-nodes/map_marker_ironclad',
             ]);
-        }, 0.2);
+        }, 0.05);
     }
 
     private applyThemeBackground(): void {

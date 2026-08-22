@@ -27,7 +27,7 @@ import { CombatCardFlow } from './cards/CombatCardFlow';
 import { CombatEnergyPool } from './cards/CombatEnergyPool';
 import { getStarterDeckForCharacter } from './cards/StarterDeck';
 import type { EnemyId, EnemyStatusCardAddition } from './enemies/EnemyDef';
-import { getEnemyDef } from './enemies/EnemyDef';
+import { getEncounterEnemyIds, getEnemyDef } from './enemies/EnemyDef';
 import { createEnemyInstance, EnemyInstance } from './enemies/EnemyInstance';
 import { loadGameMapScene } from './SceneLoader';
 import { loadSceneFast, loadSpriteFrame, loadSpriteFrames, warmScene } from './AssetLoader';
@@ -204,7 +204,7 @@ export class BattlePlaceholderManager extends Component {
         this.ensureSelectedCharacter();
 
         this._encounterKind = gd.pendingEncounterKind || 'monster';
-        const enemyIds = this.createEncounterEnemyIds(this._encounterKind, gd.pendingEncounterNodeId);
+        const enemyIds = getEncounterEnemyIds(this._encounterKind, gd.pendingEncounterNodeId, gd.selectedCharId);
         this._enemies.length = 0;
         this._enemies.push(...enemyIds.map((id) => createEnemyInstance(id, this.enemyStatScale(id))));
         this._selectedEnemyUid = this.firstAliveEnemy()?.uid ?? 0;
@@ -243,25 +243,6 @@ export class BattlePlaceholderManager extends Component {
         const fallback = FALLBACK_CHARACTERS[gd.selectedCharId] ?? FALLBACK_CHARACTERS[0];
         gd.selectedChar = { ...fallback, relics: [...fallback.relics] };
         return gd.selectedChar;
-    }
-
-    private createEncounterEnemyIds(kind: CombatEncounterKind, nodeId: number): EnemyId[] {
-        if (kind === 'boss') {
-            return Math.abs(nodeId + GlobalData.instance.selectedCharId) % 2 === 0
-                ? ['cao_cao_warlord']
-                : ['zhouyu_grand_duke'];
-        }
-        if (kind === 'elite') {
-            return Math.abs(nodeId) % 2 === 0 ? ['xiahoudun_blind'] : ['ganning_raider'];
-        }
-        const normalPools: EnemyId[][] = [
-            ['cultist'],
-            ['jaw_worm'],
-            ['red_louse', 'red_louse'],
-            ['tiger_leopard_rider', 'red_louse'],
-        ];
-        const index = Math.abs(nodeId) % normalPools.length;
-        return normalPools[index] ?? ['cultist'];
     }
 
     private enemyStatScale(enemyId: EnemyId): number {

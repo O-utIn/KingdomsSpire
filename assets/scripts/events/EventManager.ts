@@ -23,7 +23,7 @@ import type { RelicId } from '../relics/RelicDef';
 import { getRelicDef } from '../relics/RelicDef';
 import { loadGameMapScene } from '../SceneLoader';
 import { EventDef, EventChoice, EventResult } from './EventDef';
-import { EVENT_POOL } from './EventPool';
+import { getEventById, selectWeightedRandomEvent } from './EventPool';
 import { loadSceneFast, loadSpriteFrame, warmScene } from '../AssetLoader';
 
 const { ccclass } = _decorator;
@@ -49,8 +49,10 @@ export class EventManager extends Component {
     }
 
     start(): void {
-        // 随机选择一个事件
-        this._currentEvent = this.selectRandomEvent();
+        // 地图页会先选定事件并解码对应插图；直接运行本场景时仍可随机回退。
+        const gd = GlobalData.instance;
+        this._currentEvent = getEventById(gd.pendingEventId) ?? selectWeightedRandomEvent();
+        gd.pendingEventId = '';
         this.showEvent(this._currentEvent);
     }
 
@@ -451,33 +453,4 @@ export class EventManager extends Component {
         loadGameMapScene();
     }
 
-    /** 随机选择事件 */
-    private selectRandomEvent(): EventDef {
-        // 根据稀有度权重选择
-        const totalWeight = EVENT_POOL.reduce((sum, e) => {
-            return sum + (e.rarity ? this.getRarityWeight(e.rarity) : 60);
-        }, 0);
-
-        let random = Math.random() * totalWeight;
-
-        for (const event of EVENT_POOL) {
-            const weight = event.rarity ? this.getRarityWeight(event.rarity) : 60;
-            random -= weight;
-            if (random <= 0) {
-                return event;
-            }
-        }
-
-        return EVENT_POOL[0];
-    }
-
-    /** 获取稀有度权重 */
-    private getRarityWeight(rarity: string): number {
-        const weights: Record<string, number> = {
-            common: 60,
-            uncommon: 30,
-            rare: 10,
-        };
-        return weights[rarity] ?? 60;
-    }
 }

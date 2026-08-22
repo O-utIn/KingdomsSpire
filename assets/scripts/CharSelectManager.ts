@@ -1,6 +1,6 @@
 import { _decorator, Color, Component, Label, Node, Sprite, Toggle, tween, UIOpacity, UITransform } from 'cc';
 import { GlobalData } from './GlobalData';
-import { loadSceneFast, loadSpriteFrame, warmScene, warmSpriteFrames } from './AssetLoader';
+import { loadSceneFast, loadSpriteFrame, warmSceneAssets } from './AssetLoader';
 import { getRelicDef, NEOW_STARTER_RELIC_IDS } from './relics/RelicDef';
 const { ccclass, property } = _decorator;
 
@@ -66,14 +66,13 @@ export class CharSelectManager extends Component {
         this.applyDifficultyArrowLabels();
         this.updateUI(0);
         this.scheduleOnce(() => {
-            warmScene('InitialReward');
-            warmSpriteFrames([
+            void warmSceneAssets('InitialReward', [
                 'textures/background/bg1',
                 ...NEOW_STARTER_RELIC_IDS
                     .map((id) => getRelicDef(id)?.iconPath)
                     .filter((path): path is string => !!path),
             ]);
-        }, 0.2);
+        }, 0.05);
     }
 
     private applyDifficultyArrowLabels(): void {

@@ -77,6 +77,8 @@ export class GlobalData {
     /** 地图进入战斗前写入，战斗场景用它决定怪物组和奖励 */
     public pendingEncounterKind: CombatEncounterKind = '';
     public pendingEncounterNodeId: number = -1;
+    /** 地图页提前选定并预热的下一张事件插图。 */
+    public pendingEventId: string = '';
 
     /** 当前站立的地图节点 id（与 MapScreenManager 内图数据一致） */
     public mapCurrentNodeId: number = 0;
@@ -102,6 +104,7 @@ export class GlobalData {
         this.mapFloorCount = 0;
         this.pendingEncounterKind = '';
         this.pendingEncounterNodeId = -1;
+        this.pendingEventId = '';
         this.deckIds = [];
         this.deckCount = 17;
         this.potionIds = [];
